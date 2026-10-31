@@ -1,0 +1,14 @@
+[
+    {"question": "¿Dónde estudió y qué título tiene?", "sources": ["data/education.md"]},
+    {"question": "¿Qué hizo en su práctica en Falabella?", "sources": ["data/experience.md"]},
+    {"question": "¿Con qué reemplazó el envío de correos por SMTP?", "sources": ["data/experience.md"]},
+    {"question": "¿Qué bases de datos maneja?", "sources": ["data/skills.md", "data/profile.md"]},
+    {"question": "¿Tiene certificaciones de cloud?", "sources": ["data/skills.md"]},
+    {"question": "¿Qué stack usa el frontend de Control de Activos?", "sources": ["data/project-control-activos.md", "data/projects.md"]},
+    {"question": "¿Cómo maneja la concurrencia el servicio de transferencias?", "sources": ["data/project-control-activos.md"]},
+    {"question": "¿Qué es TennisApp y dónde se desplegó?", "sources": ["data/projects.md"]},
+    {"question": "¿Tiene experiencia con Kubernetes?", "sources": ["data/experience.md", "data/skills.md", "data/profile.md"]},
+    {"question": "¿Dónde vive y cuál es su GitHub?", "sources": ["data/profile.md"]},
+    {"question": "¿Ha trabajado con Spring Boot?", "sources": ["data/projects.md", "data/skills.md"]},
+    {"question": "¿Qué experiencia tiene fuera del desarrollo de software?", "sources": ["data/experience.md"]}
+]
