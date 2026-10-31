@@ -1,0 +1,11 @@
+{
+    "$schema": "https://langgra.ph/schema.json",
+    "dependencies": [
+        "."
+    ],
+    "graphs": {
+        "career_agent": "./src/agente-carrera/langgraph_entrypoint.py:graph"
+    },
+    "env": ".env",
+    "python_version": "3.12"
+}
