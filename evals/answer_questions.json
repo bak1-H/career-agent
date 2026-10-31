@@ -1,0 +1,14 @@
+[
+    {"question": "¿Dónde vive?", "expected": "santiago"},
+    {"question": "¿En qué ciudad está?", "expected": "santiago"},
+    {"question": "¿Cuál es su usuario de GitHub?", "expected": "bak1-h"},
+    {"question": "¿Qué experiencia tiene fuera del desarrollo de software?", "expected": "colchagua"},
+    {"question": "¿Con qué reemplazó el envío de correos por SMTP?", "expected": "sendgrid"},
+    {"question": "¿Dónde estudió?", "expected": "duoc"},
+    {"question": "¿Qué base de datos usa Control de Activos?", "expected": "postgresql"},
+    {"question": "¿Cómo maneja la concurrencia el servicio de transferencias?", "expected": "pesimista"},
+    {"question": "¿Tiene alguna certificación?", "expected": "cloud quest"},
+    {"question": "¿Dónde se desplegó TennisApp?", "expected": "ec2"},
+    {"question": "¿Cuántas suites de pruebas implementó?", "expected": "400"},
+    {"question": "¿Con qué integró los mantenedores de Google Sheets?", "expected": "bigquery"}
+]

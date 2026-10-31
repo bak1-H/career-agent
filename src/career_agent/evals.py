@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+import unicodedata
 from collections.abc import Sequence
 from pathlib import Path
+from time import perf_counter
+
+from langchain_core.messages import HumanMessage
 
 from career_agent.config import load_settings
 from career_agent.graph import EVIDENCE_LIMIT
-from career_agent.runtime import create_retrieval_runtime
+from career_agent.runtime import create_agent_runtime, create_retrieval_runtime
 
 
 QUESTIONS_PATH = Path(__file__).resolve().parents[2] / "evals" / "retrieval_questions.json"
+ANSWER_QUESTIONS_PATH = QUESTIONS_PATH.with_name("answer_questions.json")
 RANKING_DEPTH = 10
 
 
@@ -28,7 +34,34 @@ def summarize(ranks: Sequence[int | None], evidence_limit: int) -> tuple[float, 
     return hit_at_1, hit_at_evidence_limit, mean_reciprocal_rank
 
 
-def main() -> None:
+def normalize(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text.lower())
+    return "".join(character for character in decomposed if not unicodedata.combining(character))
+
+
+def contains_expected(answer: str, expected: str) -> bool:
+    return normalize(expected) in normalize(answer)
+
+
+def evaluate_answers() -> None:
+    cases = json.loads(ANSWER_QUESTIONS_PATH.read_text(encoding="utf-8"))
+    index, agent, _ = create_agent_runtime(load_settings())
+    passed = 0
+    started_at = perf_counter()
+    try:
+        for case in cases:
+            answer = agent.invoke({"messages": [HumanMessage(content=case["question"])]})["messages"][-1].text
+            ok = contains_expected(answer, case["expected"])
+            passed += ok
+            print(f"{'OK ' if ok else 'BAD'}  {case['expected']:<12} {case['question']}")
+    finally:
+        index.close()
+
+    average_seconds = (perf_counter() - started_at) / len(cases)
+    print(f"\nRespuestas correctas: {passed}/{len(cases)} ({passed / len(cases):.0%})  promedio: {average_seconds:.1f} s")
+
+
+def evaluate_retrieval() -> None:
     cases = json.loads(QUESTIONS_PATH.read_text(encoding="utf-8"))
     index, _, retriever = create_retrieval_runtime(load_settings())
     try:
@@ -48,6 +81,15 @@ def main() -> None:
         f"\nHit@1: {hit_at_1:.0%}  Hit@{EVIDENCE_LIMIT}: {hit_at_evidence_limit:.0%}  "
         f"MRR: {mean_reciprocal_rank:.3f}  ({len(ranks)} preguntas, rank por chunk)"
     )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--answers", action="store_true", help="Evaluate final answers instead of retrieval ranking")
+    if parser.parse_args().answers:
+        evaluate_answers()
+    else:
+        evaluate_retrieval()
 
 
 if __name__ == "__main__":
