@@ -4,7 +4,7 @@
         "."
     ],
     "graphs": {
-        "career_agent": "./src/agente-carrera/langgraph_entrypoint.py:graph"
+        "career_agent": "./src/career_agent/langgraph_entrypoint.py:graph"
     },
     "env": ".env",
     "python_version": "3.12"

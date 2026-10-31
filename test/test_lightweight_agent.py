@@ -1,16 +1,13 @@
-import sys
 import unittest
-from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "agente-carrera"))
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
-from config import Settings
-from graph import create_agent, select_excerpt
-from retrevial import DocumentationIndexer, DocumentationRetriever
+from career_agent.config import Settings
+from career_agent.graph import create_agent, select_excerpt
+from career_agent.retrieval import DocumentationIndexer, DocumentationRetriever
 
 
 def settings(**overrides):
@@ -27,7 +24,7 @@ class LightweightAgentTests(unittest.TestCase):
         model = RunnableLambda(generate)
         retriever = Mock()
         retriever.search.return_value = [Document(page_content="Python " * 10000, metadata={"source": f"data/{i}.md"}) for i in range(3)]
-        with patch("graph.ChatOllama", return_value=model) as constructor:
+        with patch("career_agent.graph.ChatOllama", return_value=model) as constructor:
             agent = create_agent(settings(), retriever)
             result = agent.invoke({"messages": [HumanMessage(content="Python?")]}, config={"metadata": {"marker": "passed"}})
         self.assertEqual(result["messages"][-1].content, "Respuesta final.\nFuente: data/0.md")
@@ -59,7 +56,7 @@ class LightweightAgentTests(unittest.TestCase):
         )
         retriever = Mock()
         retriever.search.return_value = []
-        with patch("graph.ChatOllama", return_value=RunnableLambda(lambda messages: response)):
+        with patch("career_agent.graph.ChatOllama", return_value=RunnableLambda(lambda messages: response)):
             result = create_agent(settings(), retriever).invoke({"messages": [HumanMessage(content="Pregunta")]})
         final = result["messages"][-1]
         self.assertEqual(final.content, "Respuesta final.\nFuente: data/project.md")
@@ -72,7 +69,7 @@ class LightweightAgentTests(unittest.TestCase):
                 retriever = Mock()
                 retriever.search.return_value = []
                 response = AIMessage(content=content)
-                with patch("graph.ChatOllama", return_value=RunnableLambda(lambda messages: response)):
+                with patch("career_agent.graph.ChatOllama", return_value=RunnableLambda(lambda messages: response)):
                     with self.assertRaisesRegex(RuntimeError, "final response"):
                         create_agent(settings(), retriever).invoke({"messages": [HumanMessage(content="Pregunta")]})
 
@@ -87,7 +84,7 @@ class LightweightAgentTests(unittest.TestCase):
             return AIMessage(content="Grounded answer")
         retriever = Mock()
         retriever.search.return_value = [Document(page_content="Current source", metadata={"source": "data/project.md"})]
-        with patch("graph.ChatOllama", return_value=RunnableLambda(generate)):
+        with patch("career_agent.graph.ChatOllama", return_value=RunnableLambda(generate)):
             agent = create_agent(settings(), retriever)
             result = agent.invoke({"messages": [
                 HumanMessage(content="Old unrelated topic"),
@@ -111,7 +108,7 @@ class LightweightAgentTests(unittest.TestCase):
     def test_oversized_question_is_rejected_without_retrieval_or_generation(self):
         retriever = Mock()
         model = Mock()
-        with patch("graph.ChatOllama", return_value=model):
+        with patch("career_agent.graph.ChatOllama", return_value=model):
             agent = create_agent(settings(), retriever)
             with self.assertRaisesRegex(ValueError, "context budget"):
                 agent.invoke({"messages": [HumanMessage(content="x" * 5000)]})

@@ -9,10 +9,10 @@ from langchain.messages import AIMessage, HumanMessage
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import ChatGeneration
 
-from config import load_settings
-from runtime import create_agent_runtime
+from career_agent.config import load_settings
+from career_agent.runtime import create_agent_runtime
 
-EXAMPLE_QUERY = "¿para que utilizas MongoDB"
+
 class TokenUsageCollector(BaseCallbackHandler):
     def __init__(self):
         self.input_tokens = 0
@@ -79,15 +79,18 @@ def print_indexing_result(report) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("question", nargs="?", help="Question about the professional profile")
     parser.add_argument("--index", action="store_true", help="Index local documents and exit")
     arguments = parser.parse_args()
+    if not arguments.index and not arguments.question:
+        parser.error("a question is required unless --index is used")
     settings = load_settings()
     mongo_client, agent, report = create_agent_runtime(settings, index_documents=arguments.index)
     try:
         if arguments.index:
             print_indexing_result(report)
         else:
-            run_agent(agent, EXAMPLE_QUERY)
+            run_agent(agent, arguments.question)
     finally:
         mongo_client.close()
 

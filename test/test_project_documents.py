@@ -1,13 +1,11 @@
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "agente-carrera"))
 
-import runtime
+from career_agent import runtime
 
 
 class ProjectDocumentTests(unittest.TestCase):

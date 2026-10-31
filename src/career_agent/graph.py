@@ -5,9 +5,9 @@ from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, MessagesState, StateGraph
 
-from config import Settings
-from prompt import RAG_SYSTEM_PROMPT
-from retrevial import DocumentationRetriever, _search_terms
+from career_agent.config import Settings
+from career_agent.prompt import RAG_SYSTEM_PROMPT
+from career_agent.retrieval import DocumentationRetriever, _search_terms
 
 
 def select_excerpt(text: str, query: str, limit: int) -> str:

@@ -1,12 +1,9 @@
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "agente-carrera"))
 
 from langchain_core.documents import Document
 
-from retrevial import DocumentationRetriever
+from career_agent.retrieval import DocumentationRetriever
 
 
 def document(text, source="profile.md"):

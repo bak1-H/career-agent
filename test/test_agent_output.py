@@ -1,17 +1,14 @@
 import io
-import sys
 import unittest
 from contextlib import redirect_stdout
-from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "agente-carrera"))
 
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from agenTEMP import TokenUsageCollector, run_agent
+from career_agent.cli import TokenUsageCollector, run_agent
 
 
 class AgentOutputTests(unittest.TestCase):
@@ -30,7 +27,7 @@ class AgentOutputTests(unittest.TestCase):
         ]}
         output = io.StringIO()
 
-        with redirect_stdout(output), patch("agenTEMP.perf_counter", side_effect=[10.0, 12.345]):
+        with redirect_stdout(output), patch("career_agent.cli.perf_counter", side_effect=[10.0, 12.345]):
             run_agent(agent, question)
 
         self.assertEqual(output.getvalue(), final_answer + "\nTiempo: 2.35 s\nTokens: no disponibles\n")
@@ -64,7 +61,7 @@ class AgentOutputTests(unittest.TestCase):
             return {"messages": [AIMessage(content="Final answer")]}
         agent.invoke.side_effect = invoke
         output = io.StringIO()
-        with redirect_stdout(output), patch("agenTEMP.perf_counter", side_effect=[0.0, 1.0]):
+        with redirect_stdout(output), patch("career_agent.cli.perf_counter", side_effect=[0.0, 1.0]):
             run_agent(agent, "question")
         self.assertEqual(output.getvalue(), "Final answer\nTiempo: 1.00 s\nTokens reportados (parcial): entrada=10, salida=2, total=12\n")
 
