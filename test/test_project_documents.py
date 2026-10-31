@@ -28,13 +28,14 @@ class ProjectDocumentTests(unittest.TestCase):
                 + ("project-alpha.md", "project-zeta.md")
             ]
             index = MagicMock()
-            settings = SimpleNamespace(ollama_embedding_model="unused", ollama_base_url="http://unused")
+            settings = SimpleNamespace(gemini_embedding_model="unused", embedding_dimensions=768)
 
             with (
                 patch.object(runtime, "__file__", str(root / "src" / "agent" / "runtime.py")),
-                patch.object(runtime, "OllamaEmbeddings"),
+                patch.object(runtime, "create_embeddings"),
                 patch.object(runtime, "MongoAtlasIndex", return_value=index),
                 patch.object(runtime, "DocumentationRetriever") as retriever,
+                patch.object(runtime, "create_chat_model"),
                 patch.object(runtime, "create_agent"),
             ):
                 _, _, report = runtime.create_agent_runtime(settings)

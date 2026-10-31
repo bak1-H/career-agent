@@ -72,6 +72,7 @@ def print_indexing_result(report) -> None:
     if report.indexed:
         print(f"Loaded {report.document_count} documentation pages.")
         print(f"Indexed {report.chunk_count} chunks.")
+        print(f"Removed {report.removed_count} stale chunks.")
         return
 
     print("La Documentacion Indexeada esta Lista.")

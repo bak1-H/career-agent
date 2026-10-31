@@ -1,18 +1,12 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
-from career_agent.config import Settings
-from career_agent.graph import create_agent, select_excerpt
+from career_agent.graph import EVIDENCE_LIMIT, PROMPT_CHAR_BUDGET, create_agent, select_excerpt
 from career_agent.retrieval import DocumentationIndexer, DocumentationRetriever
-
-
-def settings(**overrides):
-    values = dict(ollama_base_url="http://unused", ollama_chat_model="qwen3:4b", ollama_embedding_model="unused", mongodb_uri="unused", mongodb_database="unused", mongodb_collection="unused", atlas_vector_search_index_name="unused")
-    return Settings(**(values | overrides))
 
 
 class LightweightAgentTests(unittest.TestCase):
@@ -20,58 +14,36 @@ class LightweightAgentTests(unittest.TestCase):
         calls = []
         def generate(messages, config):
             calls.append((messages, config))
-            return AIMessage(content="Respuesta final.\nFuente: data/0.md", response_metadata={"eval_count": 12})
+            return AIMessage(content="Respuesta final.", response_metadata={"eval_count": 12})
         model = RunnableLambda(generate)
         retriever = Mock()
         retriever.search.return_value = [Document(page_content="Python " * 10000, metadata={"source": f"data/{i}.md"}) for i in range(3)]
-        with patch("career_agent.graph.ChatOllama", return_value=model) as constructor:
-            agent = create_agent(settings(), retriever)
-            result = agent.invoke({"messages": [HumanMessage(content="Python?")]}, config={"metadata": {"marker": "passed"}})
-        self.assertEqual(result["messages"][-1].content, "Respuesta final.\nFuente: data/0.md")
+        agent = create_agent(retriever, model)
+        result = agent.invoke({"messages": [HumanMessage(content="Python?")]}, config={"metadata": {"marker": "passed"}})
+        self.assertEqual(result["messages"][-1].content, "Respuesta final.")
         self.assertEqual(result["messages"][-1].response_metadata["eval_count"], 12)
         self.assertEqual(len(calls), 1)
         messages, config = calls[0]
         self.assertEqual(config["metadata"]["marker"], "passed")
         self.assertIsNotNone(config["callbacks"])
-        self.assertIsInstance(messages[-1], AIMessage)
-        self.assertEqual(messages[-1].content, "<think>\n</think>\n\n")
-        self.assertLess(sum(len(message.content) for message in messages), 3500)
+        self.assertEqual(len(messages), 2)
+        self.assertLess(sum(len(message.content) for message in messages), PROMPT_CHAR_BUDGET)
         self.assertIn("Fuente: data/0.md", messages[1].content)
         self.assertIn("Fuente: data/1.md", messages[1].content)
         self.assertIn("Fuente: data/2.md", messages[1].content)
-        self.assertTrue(messages[1].content.endswith("/no_think"))
         self.assertIn("Evidencia:\n", messages[1].content)
-        self.assertIn("Pregunta:\nPython?", messages[1].content)
-        retriever.search.assert_called_once_with("Python?", limit=3)
-        self.assertEqual(constructor.call_args.kwargs["num_ctx"], 4096)
-        self.assertEqual(constructor.call_args.kwargs["num_predict"], 384)
-        self.assertEqual(constructor.call_args.kwargs["keep_alive"], "10m")
-        self.assertFalse(constructor.call_args.kwargs["reasoning"])
+        self.assertTrue(messages[1].content.endswith("Pregunta:\nPython?"))
+        retriever.search.assert_called_once_with("Python?", limit=EVIDENCE_LIMIT)
 
-    def test_qwen_protocol_reasoning_is_removed_without_losing_usage(self):
+    def test_model_response_is_returned_with_its_usage(self):
         response = AIMessage(
-            content="Reasoning</think>\nRespuesta final.\nFuente: data/project.md",
-            response_metadata={"eval_count": 25},
+            content="Respuesta final.",
             usage_metadata={"input_tokens": 10, "output_tokens": 25, "total_tokens": 35},
         )
         retriever = Mock()
         retriever.search.return_value = []
-        with patch("career_agent.graph.ChatOllama", return_value=RunnableLambda(lambda messages: response)):
-            result = create_agent(settings(), retriever).invoke({"messages": [HumanMessage(content="Pregunta")]})
-        final = result["messages"][-1]
-        self.assertEqual(final.content, "Respuesta final.\nFuente: data/project.md")
-        self.assertEqual(final.response_metadata, response.response_metadata)
-        self.assertEqual(final.usage_metadata, response.usage_metadata)
-
-    def test_incomplete_qwen_thinking_does_not_become_a_final_answer(self):
-        for content in ["<think>Unfinished reasoning", "Reasoning</think>\n", "Reasoning</think>\n<think>unfinished"]:
-            with self.subTest(content=content):
-                retriever = Mock()
-                retriever.search.return_value = []
-                response = AIMessage(content=content)
-                with patch("career_agent.graph.ChatOllama", return_value=RunnableLambda(lambda messages: response)):
-                    with self.assertRaisesRegex(RuntimeError, "final response"):
-                        create_agent(settings(), retriever).invoke({"messages": [HumanMessage(content="Pregunta")]})
+        result = create_agent(retriever, RunnableLambda(lambda messages: response)).invoke({"messages": [HumanMessage(content="Pregunta")]})
+        self.assertEqual(result["messages"][-1], response)
 
     def test_relevant_late_paragraph_is_retained(self):
         text = "Unrelated " * 1000 + "\n\nPython evidence near the end."
@@ -84,15 +56,14 @@ class LightweightAgentTests(unittest.TestCase):
             return AIMessage(content="Grounded answer")
         retriever = Mock()
         retriever.search.return_value = [Document(page_content="Current source", metadata={"source": "data/project.md"})]
-        with patch("career_agent.graph.ChatOllama", return_value=RunnableLambda(generate)):
-            agent = create_agent(settings(), retriever)
-            result = agent.invoke({"messages": [
-                HumanMessage(content="Old unrelated topic"),
-                AIMessage(content="Old answer"),
-                HumanMessage(content="What does Control de Activos solve?" + " context" * 1000),
-                AIMessage(content="Unverified assistant assertion"),
-                HumanMessage(content="And which technologies does it use?"),
-            ]})
+        agent = create_agent(retriever, RunnableLambda(generate))
+        result = agent.invoke({"messages": [
+            HumanMessage(content="Old unrelated topic"),
+            AIMessage(content="Old answer"),
+            HumanMessage(content="What does Control de Activos solve?" + " context" * 1000),
+            AIMessage(content="Unverified assistant assertion"),
+            HumanMessage(content="And which technologies does it use?"),
+        ]})
         self.assertEqual(len(calls), 1)
         query = retriever.search.call_args.args[0]
         self.assertTrue(query.startswith("And which technologies does it use?"))
@@ -108,17 +79,11 @@ class LightweightAgentTests(unittest.TestCase):
     def test_oversized_question_is_rejected_without_retrieval_or_generation(self):
         retriever = Mock()
         model = Mock()
-        with patch("career_agent.graph.ChatOllama", return_value=model):
-            agent = create_agent(settings(), retriever)
-            with self.assertRaisesRegex(ValueError, "context budget"):
-                agent.invoke({"messages": [HumanMessage(content="x" * 5000)]})
+        agent = create_agent(retriever, model)
+        with self.assertRaisesRegex(ValueError, "context budget"):
+            agent.invoke({"messages": [HumanMessage(content="x" * PROMPT_CHAR_BUDGET)]})
         retriever.search.assert_not_called()
         model.invoke.assert_not_called()
-
-    def test_invalid_generation_limits_are_rejected(self):
-        for overrides in [dict(ollama_num_ctx=1024), dict(ollama_num_predict=0), dict(ollama_num_predict=3000)]:
-            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
-                settings(**overrides)
 
     def test_indexing_adds_only_missing_or_changed_chunks_and_is_repeatable(self):
         source = Mock()
@@ -129,6 +94,7 @@ class LightweightAgentTests(unittest.TestCase):
         source.load.return_value = [existing, changed]
         splitter.split.return_value = [existing, changed]
         index.contains.side_effect = [True, False, True, True]
+        index.remove_stale.return_value = 0
         indexer = DocumentationIndexer(source, splitter, index)
         first = indexer.ensure_indexed()
         second = indexer.ensure_indexed()

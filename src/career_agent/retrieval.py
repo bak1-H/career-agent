@@ -8,7 +8,7 @@ from typing import Protocol
 import unicodedata
 
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 
 class DocumentationSource(Protocol):
@@ -32,6 +32,9 @@ class DocumentIndex(Protocol):
         ...
 
     def ensure_ready(self) -> None:
+        ...
+
+    def remove_stale(self, source: str, current_texts: set[str]) -> int:
         ...
 
 
@@ -59,15 +62,32 @@ class LocalMarkdownSource:
         return documents
 
 
-class LangChainDocumentSplitter:
-    def __init__(self, chunk_size: int = 10_000, chunk_overlap: int = 1_000):
-        self._splitter = RecursiveCharacterTextSplitter(
+class MarkdownSectionSplitter:
+    def __init__(self, chunk_size: int = 2_000, chunk_overlap: int = 200):
+        self._section_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=[("#", "title"), ("##", "section")],
+        )
+        self._size_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
         )
 
     def split(self, documents: Sequence[Document]) -> list[Document]:
-        return self._splitter.split_documents(list(documents))
+        sections: list[Document] = []
+        for document in documents:
+            for section in self._section_splitter.split_text(document.page_content):
+                headings = [
+                    f"{marker} {section.metadata[key]}"
+                    for marker, key in (("#", "title"), ("##", "section"))
+                    if key in section.metadata
+                ]
+                sections.append(
+                    Document(
+                        page_content="\n".join([*headings, section.page_content]),
+                        metadata=dict(document.metadata),
+                    )
+                )
+        return self._size_splitter.split_documents(sections)
 
 
 @dataclass(frozen=True)
@@ -75,6 +95,7 @@ class IndexingReport:
     indexed: bool
     document_count: int
     chunk_count: int
+    removed_count: int = 0
 
 
 class DocumentationIndexer:
@@ -103,10 +124,18 @@ class DocumentationIndexer:
         ]
         if missing:
             self._index.add_documents(missing)
+        current_texts_by_source: dict[str, set[str]] = {}
+        for chunk in chunks:
+            current_texts_by_source.setdefault(str(chunk.metadata.get("source", "")), set()).add(chunk.page_content)
+        removed_count = sum(
+            self._index.remove_stale(source, texts)
+            for source, texts in current_texts_by_source.items()
+        )
         return IndexingReport(
-            indexed=bool(missing),
+            indexed=bool(missing) or removed_count > 0,
             document_count=len(documents),
             chunk_count=len(missing),
+            removed_count=removed_count,
         )
 
 

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from career_agent.config import load_settings
+from career_agent.graph import EVIDENCE_LIMIT
 from career_agent.runtime import create_retrieval_runtime
 
 
@@ -20,10 +21,11 @@ def first_relevant_rank(ranked_sources: Sequence[str], accepted_sources: set[str
     return None
 
 
-def summarize(ranks: Sequence[int | None]) -> tuple[float, float]:
+def summarize(ranks: Sequence[int | None], evidence_limit: int) -> tuple[float, float, float]:
     hit_at_1 = sum(rank == 1 for rank in ranks) / len(ranks)
+    hit_at_evidence_limit = sum(rank is not None and rank <= evidence_limit for rank in ranks) / len(ranks)
     mean_reciprocal_rank = sum(1 / rank for rank in ranks if rank) / len(ranks)
-    return hit_at_1, mean_reciprocal_rank
+    return hit_at_1, hit_at_evidence_limit, mean_reciprocal_rank
 
 
 def main() -> None:
@@ -33,7 +35,7 @@ def main() -> None:
         ranks = []
         for case in cases:
             documents = retriever.search(case["question"], limit=RANKING_DEPTH)
-            ranked_sources = list(dict.fromkeys(str(document.metadata.get("source", "")) for document in documents))
+            ranked_sources = [str(document.metadata.get("source", "")) for document in documents]
             rank = first_relevant_rank(ranked_sources, set(case["sources"]))
             ranks.append(rank)
             top_source = ranked_sources[0] if ranked_sources else "-"
@@ -41,8 +43,11 @@ def main() -> None:
     finally:
         index.close()
 
-    hit_at_1, mean_reciprocal_rank = summarize(ranks)
-    print(f"\nHit@1: {hit_at_1:.0%}  MRR: {mean_reciprocal_rank:.3f}  ({len(ranks)} preguntas)")
+    hit_at_1, hit_at_evidence_limit, mean_reciprocal_rank = summarize(ranks, EVIDENCE_LIMIT)
+    print(
+        f"\nHit@1: {hit_at_1:.0%}  Hit@{EVIDENCE_LIMIT}: {hit_at_evidence_limit:.0%}  "
+        f"MRR: {mean_reciprocal_rank:.3f}  ({len(ranks)} preguntas, rank por chunk)"
+    )
 
 
 if __name__ == "__main__":

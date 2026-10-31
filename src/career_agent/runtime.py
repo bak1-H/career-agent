@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langchain_ollama import OllamaEmbeddings
+from langchain_core.language_models import BaseChatModel
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from career_agent.adapters.mongo_atlas import MongoAtlasIndex
 from career_agent.config import Settings
@@ -11,8 +12,8 @@ from career_agent.retrieval import (
     DocumentationIndexer,
     DocumentationRetriever,
     IndexingReport,
-    LangChainDocumentSplitter,
     LocalMarkdownSource,
+    MarkdownSectionSplitter,
 )
 
 
@@ -25,12 +26,27 @@ LOCAL_PROFILE_DOCUMENTS = (
 )
 
 
+def create_chat_model(settings: Settings) -> BaseChatModel:
+    return ChatGoogleGenerativeAI(
+        model=settings.gemini_chat_model,
+        google_api_key=settings.google_api_key,
+    )
+
+
+def create_embeddings(settings: Settings) -> GoogleGenerativeAIEmbeddings:
+    return GoogleGenerativeAIEmbeddings(
+        model=settings.gemini_embedding_model,
+        google_api_key=settings.google_api_key,
+        output_dimensionality=settings.embedding_dimensions,
+    )
+
+
 def create_agent_runtime(settings: Settings, *, index_documents: bool = False) -> tuple[MongoAtlasIndex, object, IndexingReport]:
     index, indexer, retriever = create_retrieval_runtime(settings)
 
     try:
         indexing_report = indexer.ensure_indexed() if index_documents else IndexingReport(False, 0, 0)
-        agent = None if index_documents else create_agent(settings, retriever)
+        agent = None if index_documents else create_agent(retriever, create_chat_model(settings))
     except Exception:
         index.close()
         raise
@@ -39,11 +55,11 @@ def create_agent_runtime(settings: Settings, *, index_documents: bool = False) -
 
 
 def create_retrieval_runtime(settings: Settings) -> tuple[MongoAtlasIndex, DocumentationIndexer, DocumentationRetriever]:
-    embeddings = OllamaEmbeddings(
-        model=settings.ollama_embedding_model,
-        base_url=settings.ollama_base_url,
+    index = MongoAtlasIndex(
+        settings,
+        create_embeddings(settings),
+        embedding_id=f"{settings.gemini_embedding_model}:{settings.embedding_dimensions}",
     )
-    index = MongoAtlasIndex(settings, embeddings)
 
     try:
         data_directory = Path(__file__).resolve().parents[2] / "data"
@@ -53,7 +69,7 @@ def create_retrieval_runtime(settings: Settings) -> tuple[MongoAtlasIndex, Docum
             if path.is_file()
         )
         source = LocalMarkdownSource(data_directory)
-        splitter = LangChainDocumentSplitter()
+        splitter = MarkdownSectionSplitter()
         fallback_documents = splitter.split(source.load(document_paths))
         indexer = DocumentationIndexer(source, splitter, index, paths=document_paths)
         retriever = DocumentationRetriever(index, fallback_documents)

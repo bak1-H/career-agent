@@ -10,7 +10,7 @@ class RetrievalEvalTests(unittest.TestCase):
         self.assertIsNone(first_relevant_rank(["data/a.md"], {"data/z.md"}))
 
     def test_summary_counts_misses_as_zero(self):
-        self.assertEqual(summarize([1, 2, None, 4]), (0.25, (1 + 0.5 + 0.25) / 4))
+        self.assertEqual(summarize([1, 2, None, 4], evidence_limit=2), (0.25, 0.5, (1 + 0.5 + 0.25) / 4))
 
     def test_question_sources_exist(self):
         project_root = QUESTIONS_PATH.parents[1]
