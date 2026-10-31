@@ -4,7 +4,7 @@ from typing import Literal
 
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ EVIDENCE_LIMIT = 5
 PROMPT_CHAR_BUDGET = 12_000
 GRADING_EXCERPT_LIMIT = 1_200
 MAX_QUERY_REWRITES = 1
+PREVIOUS_ANSWER_LIMIT = 600
 
 
 class EvidenceGrade(BaseModel):
@@ -63,6 +64,46 @@ def _conversation(state: AgentState) -> tuple[str, str, int]:
     return question, previous_question, remaining
 
 
+def _previous_answer(state: AgentState) -> str:
+    messages = state["messages"]
+    if len(messages) < 2 or not isinstance(messages[-1], HumanMessage) or not isinstance(messages[-2], AIMessage):
+        return ""
+    return messages[-2].text[:PREVIOUS_ANSWER_LIMIT]
+
+
+def _history(state: AgentState, previous_question: str) -> str:
+    history = (
+        "Pregunta anterior (solo contexto de referencia, nunca evidencia; "
+        "la pregunta actual tiene prioridad):\n" + previous_question + "\n\n"
+        if previous_question else ""
+    )
+    previous_answer = _previous_answer(state)
+    if previous_answer:
+        history += (
+            "Tu respuesta anterior (no es evidencia; no repitas sus datos, "
+            "agrega otros que estén en la evidencia):\n" + previous_answer + "\n\n"
+        )
+    return history
+
+
+def create_full_context_agent(documents: list[Document], model: BaseChatModel):
+    context = "\n\n".join(f"Fuente: {document.metadata.get('source', 'sin fuente identificada')}\n{document.page_content}" for document in documents)
+
+    def answer(state: AgentState, config: RunnableConfig):
+        question, previous_question, _ = _conversation(state)
+        request = [
+            SystemMessage(content=RAG_SYSTEM_PROMPT),
+            HumanMessage(content=f"{_history(state, previous_question)}Evidencia:\n{context}\n\nPregunta:\n{question}"),
+        ]
+        return {"messages": [model.invoke(request, config=config)]}
+
+    graph = StateGraph(AgentState)
+    graph.add_node("answer", answer)
+    graph.add_edge(START, "answer")
+    graph.add_edge("answer", END)
+    return graph.compile()
+
+
 def _fragments(documents: list[Document], query: str, limit_per_fragment: int) -> str:
     return "\n\n".join(
         f"Fuente: {document.metadata.get('source', 'sin fuente identificada')}\n"
@@ -84,10 +125,11 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
         documents = state.get("documents", [])
         if not documents:
             return {"evidence_sufficient": False}
-        question, _, _ = _conversation(state)
+        question, previous_question, _ = _conversation(state)
+        context = f"Pregunta anterior:\n{previous_question}\n\n" if previous_question else ""
         request = [
             SystemMessage(content=EVIDENCE_GRADER_PROMPT),
-            HumanMessage(content=f"Fragmentos:\n{_fragments(documents, question, GRADING_EXCERPT_LIMIT)}\n\nPregunta:\n{question}"),
+            HumanMessage(content=f"Fragmentos:\n{_fragments(documents, f'{previous_question}\n{question}', GRADING_EXCERPT_LIMIT)}\n\n{context}Pregunta actual:\n{question}"),
         ]
         return {"evidence_sufficient": evidence_grader.invoke(request, config=config).sufficient}
 
@@ -105,11 +147,7 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
 
     def generate(state: AgentState, config: RunnableConfig):
         question, previous_question, remaining = _conversation(state)
-        history = (
-            "Pregunta anterior (solo contexto de referencia, nunca evidencia; "
-            "la pregunta actual tiene prioridad):\n" + previous_question + "\n\n"
-            if previous_question else ""
-        )
+        history = _history(state, previous_question)
         remaining -= len(history)
         documents = state.get("documents", [])
         query = state.get("retrieval_query") or question

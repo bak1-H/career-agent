@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from threading import Lock
 from time import monotonic
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
@@ -24,6 +24,7 @@ from career_agent.runtime import create_agent_runtime
 logger = logging.getLogger(__name__)
 
 MAX_QUESTION_LENGTH = 500
+MAX_PREVIOUS_ANSWER_LENGTH = 4_000
 REQUESTS_PER_MINUTE_PER_CLIENT = 10
 REQUESTS_PER_DAY = 300
 
@@ -62,12 +63,12 @@ def _client_address(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _read_question(payload: object, field: str, required: bool) -> str:
+def _read_text(payload: object, field: str, required: bool, max_length: int = MAX_QUESTION_LENGTH) -> str:
     value = payload.get(field, "") if isinstance(payload, dict) else ""
     if not isinstance(value, str) or (required and not value.strip()):
         raise ValueError(f"'{field}' must be a non-empty string")
-    if len(value) > MAX_QUESTION_LENGTH:
-        raise ValueError(f"'{field}' must have at most {MAX_QUESTION_LENGTH} characters")
+    if len(value) > max_length:
+        raise ValueError(f"'{field}' must have at most {max_length} characters")
     return value.strip()
 
 
@@ -92,12 +93,17 @@ def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(
         except ValueError:
             return JSONResponse({"error": "The body must be valid JSON."}, status_code=400)
         try:
-            question = _read_question(payload, "question", required=True)
-            previous_question = _read_question(payload, "previous_question", required=False)
+            question = _read_text(payload, "question", required=True)
+            previous_question = _read_text(payload, "previous_question", required=False)
+            previous_answer = _read_text(payload, "previous_answer", required=False, max_length=MAX_PREVIOUS_ANSWER_LENGTH)
         except ValueError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
 
-        messages = [HumanMessage(content=text) for text in (previous_question, question) if text]
+        messages = [
+            *([HumanMessage(content=previous_question)] if previous_question else []),
+            *([AIMessage(content=previous_answer)] if previous_answer else []),
+            HumanMessage(content=question),
+        ]
         try:
             result = await run_in_threadpool(state["agent"].invoke, {"messages": messages})
         except Exception:

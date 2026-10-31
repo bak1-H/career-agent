@@ -1,0 +1,17 @@
+[
+    {
+        "question": "¿Cuál fue su último trabajo?",
+        "followup": "si",
+        "facts": ["ocho", "sendgrid", "bigquery", "sheets", "swagger", "confluence", "400", "uat", "gitlab", "sonarqube", "kubernetes", "helm", "control de activos", "cronjob", "rpa"]
+    },
+    {
+        "question": "¿Qué hizo en Falabella?",
+        "followup": "cuéntame más",
+        "facts": ["ocho", "sendgrid", "bigquery", "sheets", "swagger", "confluence", "400", "uat", "gitlab", "sonarqube", "kubernetes", "helm", "control de activos", "cronjob", "rpa"]
+    },
+    {
+        "question": "¿Qué proyectos tiene?",
+        "followup": "¿y qué más?",
+        "facts": ["tennisapp", "control de activos", "pedidos360", "sanosysalvos", "django", "ec2", "spring", "azure", "digitalocean", "bff", "github actions"]
+    }
+]

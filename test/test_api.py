@@ -25,6 +25,20 @@ class AskEndpointTests(unittest.TestCase):
         self.assertEqual([message.content for message in messages], ["¿Qué es Control de Activos?", "¿Y el backend?"])
         index.close.assert_called_once()
 
+    def test_previous_answer_is_sent_between_the_questions(self):
+        agent = Mock()
+        agent.invoke.return_value = {"messages": [AIMessage(content="Más detalle")]}
+        client, _ = build_client(agent)
+        with client:
+            response = client.post("/ask", json={"question": "si", "previous_question": "¿Cuál fue su último trabajo?", "previous_answer": "Falabella."})
+        self.assertEqual(response.status_code, 200)
+        messages = agent.invoke.call_args.args[0]["messages"]
+        self.assertEqual([(type(message).__name__, message.content) for message in messages], [
+            ("HumanMessage", "¿Cuál fue su último trabajo?"),
+            ("AIMessage", "Falabella."),
+            ("HumanMessage", "si"),
+        ])
+
     def test_invalid_payloads_are_rejected_without_calling_the_agent(self):
         agent = Mock()
         client, _ = build_client(agent)

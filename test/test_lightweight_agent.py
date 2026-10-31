@@ -108,7 +108,7 @@ class LightweightAgentTests(unittest.TestCase):
         text = "Unrelated " * 1000 + "\n\nPython evidence near the end."
         self.assertIn("Python evidence", select_excerpt(text, "Python", 100))
 
-    def test_followup_retains_bounded_user_context_without_reusing_assistant_facts(self):
+    def test_followup_shows_previous_answer_only_as_labeled_non_evidence(self):
         calls = []
         def generate(messages, config):
             calls.append(messages)
@@ -120,19 +120,25 @@ class LightweightAgentTests(unittest.TestCase):
             HumanMessage(content="Old unrelated topic"),
             AIMessage(content="Old answer"),
             HumanMessage(content="What does Control de Activos solve?" + " context" * 1000),
-            AIMessage(content="Unverified assistant assertion"),
+            AIMessage(content="Unverified assistant assertion" + " detail" * 1000),
             HumanMessage(content="And which technologies does it use?"),
         ]})
         self.assertEqual(len(calls), 1)
         query = retriever.search.call_args.args[0]
         self.assertTrue(query.startswith("And which technologies does it use?"))
         self.assertIn("Control de Activos", query)
+        self.assertNotIn("Unverified assistant assertion", query)
         self.assertLess(len(query), 600)
         prompt = calls[0][1].content
         self.assertIn("Control de Activos", prompt)
         self.assertIn("la pregunta actual tiene prioridad", prompt)
-        self.assertNotIn("Unverified assistant assertion", prompt)
+        label = "Tu respuesta anterior (no es evidencia"
+        self.assertIn(label, prompt)
+        self.assertLess(prompt.index(label), prompt.index("Unverified assistant assertion"))
+        self.assertLess(prompt.index("Unverified assistant assertion"), prompt.index("Evidencia:"))
+        self.assertLess(prompt.count(" detail"), 100)
         self.assertNotIn("Old unrelated topic", prompt)
+        self.assertNotIn("Old answer", prompt)
         self.assertEqual(result["messages"][-1].content, "Grounded answer")
 
     def test_oversized_question_is_rejected_without_retrieval_or_generation(self):
