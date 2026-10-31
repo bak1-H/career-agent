@@ -8,10 +8,7 @@ from typing import Protocol
 import unicodedata
 
 from langchain_core.documents import Document
-from langchain_mongodb import MongoDBAtlasVectorSearch
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-from career_agent.config import Settings
 
 
 class DocumentationSource(Protocol):
@@ -31,9 +28,10 @@ class DocumentIndex(Protocol):
     def similarity_search(self, query: str, k: int) -> list[Document]:
         ...
 
+    def contains(self, source: str, text: str) -> bool:
+        ...
 
-class IndexCollection(Protocol):
-    def count_documents(self, filter: dict[str, object]) -> int:
+    def ensure_ready(self) -> None:
         ...
 
 
@@ -85,13 +83,11 @@ class DocumentationIndexer:
         source: DocumentationSource,
         splitter: DocumentSplitter,
         index: DocumentIndex,
-        collection: IndexCollection,
         paths: Sequence[str] = (),
     ):
         self._source = source
         self._splitter = splitter
         self._index = index
-        self._collection = collection
         self._paths = tuple(paths)
 
     def ensure_indexed(self) -> IndexingReport:
@@ -99,10 +95,12 @@ class DocumentationIndexer:
         if not documents:
             raise RuntimeError("No se pudo cargar la información local del perfil.")
 
+        self._index.ensure_ready()
         chunks = self._splitter.split(documents)
-        missing = [chunk for chunk in chunks if not self._collection.count_documents(
-            {"source": chunk.metadata.get("source"), "text": chunk.page_content}
-        )]
+        missing = [
+            chunk for chunk in chunks
+            if not self._index.contains(str(chunk.metadata.get("source", "")), chunk.page_content)
+        ]
         if missing:
             self._index.add_documents(missing)
         return IndexingReport(
@@ -207,19 +205,4 @@ def _search_terms(text: str) -> set[str]:
             "una",
             "y",
         }
-    )
-
-
-def create_vector_store(settings: Settings, collection):
-    from langchain_ollama import OllamaEmbeddings
-
-    embeddings = OllamaEmbeddings(
-        model=settings.ollama_embedding_model,
-        base_url=settings.ollama_base_url,
-    )
-    return MongoDBAtlasVectorSearch(
-        embedding=embeddings,
-        collection=collection,
-        index_name=settings.atlas_vector_search_index_name,
-        relevance_score_fn="cosine",
     )

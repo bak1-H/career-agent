@@ -128,16 +128,16 @@ class LightweightAgentTests(unittest.TestCase):
         changed = Document(page_content="changed", metadata={"source": "data/b.md"})
         source.load.return_value = [existing, changed]
         splitter.split.return_value = [existing, changed]
-        collection = Mock()
-        collection.count_documents.side_effect = [1, 0, 1, 1]
-        indexer = DocumentationIndexer(source, splitter, index, collection)
+        index.contains.side_effect = [True, False, True, True]
+        indexer = DocumentationIndexer(source, splitter, index)
         first = indexer.ensure_indexed()
         second = indexer.ensure_indexed()
         index.add_documents.assert_called_once_with([changed])
         self.assertEqual(first.chunk_count, 1)
         self.assertTrue(first.indexed)
         self.assertFalse(second.indexed)
-        self.assertEqual(collection.count_documents.call_args.args[0], {"source": "data/b.md", "text": "changed"})
+        self.assertEqual(index.contains.call_args.args, ("data/b.md", "changed"))
+        self.assertEqual(index.ensure_ready.call_count, 2)
 
     def test_stale_semantic_versions_are_excluded_for_local_sources(self):
         current = Document(page_content="Python current", metadata={"source": "data/a.md"})

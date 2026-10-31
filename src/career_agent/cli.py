@@ -85,14 +85,14 @@ def main() -> None:
     if not arguments.index and not arguments.question:
         parser.error("a question is required unless --index is used")
     settings = load_settings()
-    mongo_client, agent, report = create_agent_runtime(settings, index_documents=arguments.index)
+    index, agent, report = create_agent_runtime(settings, index_documents=arguments.index)
     try:
         if arguments.index:
             print_indexing_result(report)
         else:
             run_agent(agent, arguments.question)
     finally:
-        mongo_client.close()
+        index.close()
 
 
 if __name__ == "__main__":
