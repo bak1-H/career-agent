@@ -4,7 +4,7 @@
 
 - Periodo: mayo de 2026 — octubre de 2026.
 - Equipo: Automatización e Infraestructura.
-- Modalidad: práctica profesional.
+- Modalidad: práctica profesional del título de Analista Programador Computacional (DUOC UC).
 
 ### Responsabilidades y logros
 

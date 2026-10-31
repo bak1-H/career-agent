@@ -10,5 +10,8 @@
     {"question": "¿Tiene alguna certificación?", "expected": "cloud quest"},
     {"question": "¿Dónde se desplegó TennisApp?", "expected": "ec2"},
     {"question": "¿Cuántas suites de pruebas implementó?", "expected": "400"},
-    {"question": "¿Con qué integró los mantenedores de Google Sheets?", "expected": "bigquery"}
+    {"question": "¿Con qué integró los mantenedores de Google Sheets?", "expected": "bigquery"},
+    {"question": "¿Qué ramos está cursando ahora?", "expected": "cloud native i"},
+    {"question": "¿Ya está titulado de ingeniero?", "expected": "no"},
+    {"question": "¿Qué le falta para terminar la carrera?", "expected": "arquitecturas ti"}
 ]
