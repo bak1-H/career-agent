@@ -1,6 +1,6 @@
 # Educación
 
-## Ingeniería Informática — Desarrollo de Software
+## Ingeniería en Informática — Desarrollo de Software
 
 - Institución: DUOC UC.
 - Periodo: 2026 — presente.
@@ -11,4 +11,5 @@
 - Institución: DUOC UC.
 - Periodo: 2024 — 2026.
 - Estado: título completado.
+- Proyecto de título: TennisApp, plataforma web para entrenadores y jugadores de tenis (React + Django).
 - Práctica profesional: realizada en Falabella entre mayo y octubre de 2026, en el equipo de Automatización e Infraestructura.

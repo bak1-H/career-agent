@@ -21,3 +21,11 @@ Continuar creciendo en arquitectura de software y buenas prácticas de desarroll
 - Proactividad y motivación por aprender.
 - Trabajo en equipo.
 - Comunicación efectiva.
+
+## Intereses
+
+- Ver series
+- Ir al gimnasio
+- Juegos en línea
+
+

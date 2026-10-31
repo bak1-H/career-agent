@@ -21,12 +21,18 @@
 - TypeORM
 - Tailwind CSS
 - NextJS
+- Vite
+- Django REST Framework
+- Django Channels
+- Supabase
 
 ## Bases de datos
 
 - PostgreSQL
 - MySQL
 - MongoDB
+- BigQuery
+- Redis
 
 ## Cloud e infraestructura
 
@@ -35,6 +41,9 @@
 - Docker
 - Kubernetes
 - Helm
+- Nginx
+- Netlify
+- Vercel
 
 ## CI/CD y calidad
 
@@ -53,6 +62,10 @@
 - Jest
 - Testing Library
 - Ambientes QA y UAT
+- WebSockets
+- Vitest
+- pytest
+- Playwright
 
 ## Herramientas
 
