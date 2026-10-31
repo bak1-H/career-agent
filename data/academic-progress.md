@@ -5,7 +5,7 @@
 - Carrera: Ingeniería en Informática, DUOC UC.
 - Mención de Maximiliano: Desarrollo de Software.
 - Duración oficial: 8 semestres.
-- La carrera tiene una salida intermedia de Analista Programador y una certificación de Desarrollador Fullstack.
+- El plan de la carrera, según DUOC UC, incluye una salida intermedia de Analista Programador y una certificación de Desarrollador Fullstack. Maximiliano obtuvo el título de Analista Programador Computacional; no hay registro de que haya obtenido la certificación de Desarrollador Fullstack.
 - Los primeros dos años son un plan común; la especialización se cursa desde el quinto semestre.
 - Especializaciones que informa DUOC UC: Desarrollo de Software, Automatización, Ciencia de Datos, Ingeniería de Datos e Inteligencia Artificial. Desarrollo de Software se ofrece en todas las sedes donde se dicta la carrera; las demás dependen de sede y cupos.
 - Estado: estudiante en curso. No está titulado de Ingeniero en Informática y la asignatura Práctica Profesional de esta carrera figura pendiente.
