@@ -9,6 +9,7 @@ from threading import Lock
 from time import monotonic
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_google_genai.chat_models import GoogleRateLimitError
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
@@ -63,6 +64,14 @@ def _client_address(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _is_quota_error(error: BaseException | None) -> bool:
+    while error is not None:
+        if isinstance(error, GoogleRateLimitError) or getattr(error, "code", None) == 429:
+            return True
+        error = error.__cause__
+    return False
+
+
 def _read_text(payload: object, field: str, required: bool, max_length: int = MAX_QUESTION_LENGTH) -> str:
     value = payload.get(field, "") if isinstance(payload, dict) else ""
     if not isinstance(value, str) or (required and not value.strip()):
@@ -106,8 +115,10 @@ def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(
         ]
         try:
             result = await run_in_threadpool(state["agent"].invoke, {"messages": messages})
-        except Exception:
+        except Exception as error:
             logger.exception("Agent invocation failed")
+            if _is_quota_error(error):
+                return JSONResponse({"error": "The assistant reached its usage limit for now."}, status_code=503)
             return JSONResponse({"error": "The assistant could not answer right now."}, status_code=502)
         return JSONResponse({"answer": result["messages"][-1].text})
 

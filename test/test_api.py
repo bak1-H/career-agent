@@ -58,6 +58,18 @@ class AskEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertNotIn("secret", response.text)
 
+    def test_model_quota_errors_return_503_quickly_identifiable(self):
+        class QuotaExhausted(Exception):
+            code = 429
+        agent = Mock()
+        agent.invoke.side_effect = RuntimeError("wrapped")
+        agent.invoke.side_effect.__cause__ = QuotaExhausted("RESOURCE_EXHAUSTED")
+        client, _ = build_client(agent)
+        with client:
+            response = client.post("/ask", json={"question": "Hola"})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("RESOURCE_EXHAUSTED", response.text)
+
     def test_rate_limited_clients_receive_429(self):
         agent = Mock()
         agent.invoke.return_value = {"messages": [AIMessage(content="Respuesta")]}

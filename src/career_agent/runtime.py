@@ -31,6 +31,7 @@ def create_chat_model(settings: Settings) -> BaseChatModel:
     return ChatGoogleGenerativeAI(
         model=settings.gemini_chat_model,
         google_api_key=settings.google_api_key,
+        max_retries=1,
     )
 
 
