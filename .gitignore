@@ -2,7 +2,4 @@
 .venv/
 __pycache__/
 *.pyc
-.codex
-.agents
-AGENTS.md
 *.egg-info/
