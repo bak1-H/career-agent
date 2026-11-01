@@ -10,7 +10,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import ChatGeneration
 
 from career_agent.config import load_settings
-from career_agent.runtime import create_agent_runtime
+from career_agent.github_sync import sync_github
+from career_agent.runtime import create_agent_runtime, data_directory
 
 
 class TokenUsageCollector(BaseCallbackHandler):
@@ -82,7 +83,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("question", nargs="?", help="Question about the professional profile")
     parser.add_argument("--index", action="store_true", help="Index local documents and exit")
+    parser.add_argument("--sync-github", action="store_true", help="Write public GitHub repositories to data/github.md and exit")
     arguments = parser.parse_args()
+    if arguments.sync_github:
+        destination = data_directory() / "github.md"
+        print(f"Wrote {sync_github(destination)} repositories to {destination}.")
+        return
     if not arguments.index and not arguments.question:
         parser.error("a question is required unless --index is used")
     settings = load_settings()

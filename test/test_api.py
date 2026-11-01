@@ -4,7 +4,7 @@ from unittest.mock import Mock
 from langchain_core.messages import AIMessage
 from starlette.testclient import TestClient
 
-from career_agent.api import MAX_QUESTION_LENGTH, RateLimiter, create_app
+from career_agent.api import MAX_PREVIOUS_ANSWER_LENGTH, MAX_QUESTION_LENGTH, RateLimiter, create_app
 
 
 def build_client(agent, rate_limiter=None):
@@ -20,7 +20,7 @@ class AskEndpointTests(unittest.TestCase):
         client, index = build_client(agent)
         with client:
             response = client.post("/ask", json={"question": "¿Y el backend?", "previous_question": "¿Qué es Control de Activos?"})
-        self.assertEqual(response.json(), {"answer": "Respuesta"})
+        self.assertEqual(response.json(), {"answer": "Respuesta", "suggestions": []})
         messages = agent.invoke.call_args.args[0]["messages"]
         self.assertEqual([message.content for message in messages], ["¿Qué es Control de Activos?", "¿Y el backend?"])
         index.close.assert_called_once()
@@ -38,6 +38,52 @@ class AskEndpointTests(unittest.TestCase):
             ("AIMessage", "Falabella."),
             ("HumanMessage", "si"),
         ])
+
+    def test_history_turns_are_sent_in_order_before_the_question(self):
+        agent = Mock()
+        agent.invoke.return_value = {"messages": [AIMessage(content="Listo")], "suggestions": ["¿Y el frontend?", "¿Dónde se desplegó?"]}
+        client, _ = build_client(agent)
+        history = [{"question": f"P{number}", "answer": f"R{number}"} for number in range(1, 4)]
+        with client:
+            response = client.post("/ask", json={"question": "si", "history": history, "previous_question": "ignorada"})
+        self.assertEqual(response.json(), {"answer": "Listo", "suggestions": ["¿Y el frontend?", "¿Dónde se desplegó?"]})
+        messages = agent.invoke.call_args.args[0]["messages"]
+        self.assertEqual([(type(message).__name__, message.content) for message in messages], [
+            ("HumanMessage", "P1"), ("AIMessage", "R1"),
+            ("HumanMessage", "P2"), ("AIMessage", "R2"),
+            ("HumanMessage", "P3"), ("AIMessage", "R3"),
+            ("HumanMessage", "si"),
+        ])
+
+    def test_only_the_last_three_history_turns_are_kept(self):
+        agent = Mock()
+        agent.invoke.return_value = {"messages": [AIMessage(content="Listo")]}
+        client, _ = build_client(agent)
+        history = [{"question": f"P{number}", "answer": f"R{number}"} for number in range(1, 6)]
+        with client:
+            client.post("/ask", json={"question": "si", "history": history})
+        messages = agent.invoke.call_args.args[0]["messages"]
+        self.assertEqual([message.content for message in messages], ["P3", "R3", "P4", "R4", "P5", "R5", "si"])
+
+    def test_invalid_history_is_rejected_without_calling_the_agent(self):
+        agent = Mock()
+        client, _ = build_client(agent)
+        invalid = [
+            "texto",
+            {"question": "P", "answer": "R"},
+            ["texto"],
+            [{"question": 3, "answer": "R"}],
+            [{"question": "P", "answer": 3}],
+            [{"question": "  ", "answer": "R"}],
+            [{"answer": "R"}],
+            [{"question": "x" * (MAX_QUESTION_LENGTH + 1), "answer": "R"}],
+            [{"question": "P", "answer": "x" * (MAX_PREVIOUS_ANSWER_LENGTH + 1)}],
+        ]
+        with client:
+            for history in invalid:
+                with self.subTest(history=history):
+                    self.assertEqual(client.post("/ask", json={"question": "Hola", "history": history}).status_code, 400)
+        agent.invoke.assert_not_called()
 
     def test_invalid_payloads_are_rejected_without_calling_the_agent(self):
         agent = Mock()

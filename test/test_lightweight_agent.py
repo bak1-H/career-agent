@@ -1,11 +1,11 @@
+import json
 import unittest
 from unittest.mock import Mock
-
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
-from career_agent.graph import EVIDENCE_LIMIT, PROMPT_CHAR_BUDGET, create_agent, select_excerpt
+from career_agent.graph import EVIDENCE_LIMIT, PROMPT_CHAR_BUDGET, DEFAULT_SUGGESTIONS, create_agent, is_follow_up, select_excerpt, small_talk_kind
 from career_agent.retrieval import DocumentationIndexer, DocumentationRetriever
 
 
@@ -17,10 +17,20 @@ class FakeChatModel:
         self.grade_requests = []
         self.rewrite_requests = []
 
-    def with_structured_output(self, schema):
+    def with_structured_output(self, schema, include_raw=False):
         if schema.__name__ == "EvidenceGrade":
             return RunnableLambda(lambda messages: self._grade(schema, messages))
+        if schema.__name__ == "AssistantReply":
+            return RunnableLambda(lambda messages, config: self._reply(schema, messages, config))
         return RunnableLambda(lambda messages: self._rewrite(schema, messages))
+
+    def _reply(self, schema, messages, config):
+        raw = self._generate.invoke(messages, config=config)
+        try:
+            parsed = schema.model_validate_json(raw.content)
+        except ValueError:
+            parsed = None
+        return {"raw": raw, "parsed": parsed, "parsing_error": None}
 
     def _grade(self, schema, messages):
         self.grade_requests.append(messages)
@@ -132,14 +142,112 @@ class LightweightAgentTests(unittest.TestCase):
         prompt = calls[0][1].content
         self.assertIn("Control de Activos", prompt)
         self.assertIn("la pregunta actual tiene prioridad", prompt)
-        label = "Tu respuesta anterior (no es evidencia"
+        label = "Tus respuestas anteriores en esta conversación (no son evidencia"
         self.assertIn(label, prompt)
         self.assertLess(prompt.index(label), prompt.index("Unverified assistant assertion"))
         self.assertLess(prompt.index("Unverified assistant assertion"), prompt.index("Evidencia:"))
         self.assertLess(prompt.count(" detail"), 100)
         self.assertNotIn("Old unrelated topic", prompt)
-        self.assertNotIn("Old answer", prompt)
+        self.assertIn("Old answer", prompt)
         self.assertEqual(result["messages"][-1].content, "Grounded answer")
+
+    def test_structured_reply_becomes_plain_answer_and_suggestions(self):
+        payload = json.dumps({"answer": " Maxi usó Python. ", "suggestions": ["¿Dónde lo usó?", "", "x" * 61, "¿Qué más hizo?", "¿Tercera?"]})
+        response = AIMessage(content=payload, usage_metadata={"input_tokens": 1, "output_tokens": 2, "total_tokens": 3})
+        retriever = Mock()
+        retriever.search.return_value = [Document(page_content="Python", metadata={"source": "data/skills.md"})]
+        result = create_agent(retriever, FakeChatModel(lambda messages: response)).invoke({"messages": [HumanMessage(content="¿Sabe Python?")]})
+        self.assertEqual(result["messages"][-1].text, "Maxi usó Python.")
+        self.assertEqual(result["messages"][-1].usage_metadata["total_tokens"], 3)
+        self.assertEqual(result["suggestions"], ["¿Dónde lo usó?", "¿Qué más hizo?"])
+
+    def test_unparseable_reply_falls_back_to_raw_text_without_suggestions(self):
+        retriever = Mock()
+        retriever.search.return_value = [Document(page_content="Python", metadata={"source": "data/skills.md"})]
+        result = create_agent(retriever, answering("Texto plano {no json")).invoke({"messages": [HumanMessage(content="¿Sabe Python?")]})
+        self.assertEqual(result["messages"][-1].text, "Texto plano {no json")
+        self.assertEqual(result["suggestions"], [])
+
+    def test_no_suggestions_without_evidence(self):
+        payload = json.dumps({"answer": "No tengo ese dato.", "suggestions": ["¿Qué más sabe?"]})
+        retriever = Mock()
+        retriever.search.return_value = []
+        model = FakeChatModel(lambda messages: AIMessage(content=payload), grades=(), rewrites=("otra",))
+        result = create_agent(retriever, model).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
+        self.assertEqual(result["suggestions"], [])
+
+    def test_generation_prompt_asks_for_suggestions(self):
+        calls = []
+        def generate(messages, config):
+            calls.append(messages)
+            return AIMessage(content="Respuesta")
+        retriever = Mock()
+        retriever.search.return_value = []
+        create_agent(retriever, FakeChatModel(generate, rewrites=("otra",), grades=())).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
+        self.assertIn("suggestions", calls[0][0].content)
+
+    def test_small_talk_detection(self):
+        cases = {"Hola": "greeting", "¡Buenas tardes!": "greeting", "hola, ¿cómo estás?": "greeting", "Muchas gracias": "thanks", "chao": "farewell", "hasta luego": "farewell"}
+        for question, kind in cases.items():
+            with self.subTest(question=question):
+                self.assertEqual(small_talk_kind(question), kind)
+        for question in ["sí", "ok", "¿Qué?", "hola, ¿en qué proyectos trabajó?", "gracias, ¿sabe Go?", ""]:
+            with self.subTest(question=question):
+                self.assertIsNone(small_talk_kind(question))
+
+    def test_small_talk_skips_retrieval_and_the_model(self):
+        retriever = Mock()
+        model = Mock()
+        model.with_structured_output.return_value = Mock()
+        result = create_agent(retriever, model).invoke({"messages": [HumanMessage(content="¡Hola!")]})
+        retriever.search.assert_not_called()
+        model.with_structured_output.return_value.invoke.assert_not_called()
+        self.assertTrue(result["messages"][-1].content)
+        self.assertEqual(result["suggestions"], DEFAULT_SUGGESTIONS)
+
+    def test_follow_up_detection(self):
+        for question in ["sí", "Si", "¡Dale!", "cuéntame más", "Cuentame mas", "más", "ok", "y eso?", "cuéntame más sobre eso por favor"]:
+            with self.subTest(question=question):
+                self.assertTrue(is_follow_up(question))
+        for question in ["¿Qué tecnologías usó en Control de Activos?", "Describe su experiencia en la empresa anterior"]:
+            with self.subTest(question=question):
+                self.assertFalse(is_follow_up(question))
+
+    def test_follow_up_retrieval_uses_the_tail_of_the_previous_answer(self):
+        retriever = Mock()
+        retriever.search.return_value = [Document(page_content="Zenly", metadata={"source": "data/projects.md"})]
+        offer = "Trabajó en varios proyectos." + " relleno" * 100 + " ¿Quieres que te cuente sobre Zenly?"
+        create_agent(retriever, answering()).invoke({"messages": [
+            HumanMessage(content="¿En qué proyectos trabajó?"),
+            AIMessage(content=offer),
+            HumanMessage(content="sí, cuéntame más"),
+        ]})
+        query = retriever.search.call_args.args[0]
+        self.assertIn("Zenly", query)
+        self.assertNotIn("Trabajó en varios proyectos", query)
+
+    def test_follow_up_grader_and_rewriter_receive_the_previous_answer_tail(self):
+        retriever = Mock()
+        retriever.search.return_value = [Document(page_content="Sin dato", metadata={"source": "data/projects.md"})]
+        model = FakeChatModel(lambda messages: AIMessage(content="Listo"), grades=(False, True), rewrites=("zenly proyecto",))
+        create_agent(retriever, model).invoke({"messages": [
+            HumanMessage(content="¿En qué proyectos trabajó?"),
+            AIMessage(content="¿Te cuento sobre Zenly?"),
+            HumanMessage(content="sí"),
+        ]})
+        self.assertIn("Zenly", model.grade_requests[0][1].content)
+        self.assertIn("Zenly", model.rewrite_requests[0][1].content)
+
+    def test_standalone_question_retrieval_ignores_the_previous_answer(self):
+        retriever = Mock()
+        retriever.search.return_value = []
+        model = FakeChatModel(lambda messages: AIMessage(content="Listo"), grades=(), rewrites=("otra",))
+        create_agent(retriever, model).invoke({"messages": [
+            HumanMessage(content="¿En qué proyectos trabajó?"),
+            AIMessage(content="¿Te cuento sobre Zenly?"),
+            HumanMessage(content="¿Cuál es su formación académica?"),
+        ]})
+        self.assertNotIn("Zenly", retriever.search.call_args_list[0].args[0])
 
     def test_oversized_question_is_rejected_without_retrieval_or_generation(self):
         retriever = Mock()

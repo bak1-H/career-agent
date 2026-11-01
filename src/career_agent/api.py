@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 MAX_QUESTION_LENGTH = 500
 MAX_PREVIOUS_ANSWER_LENGTH = 4_000
+MAX_HISTORY_TURNS = 3
 REQUESTS_PER_MINUTE_PER_CLIENT = 10
 REQUESTS_PER_DAY = 300
 
@@ -81,6 +82,38 @@ def _read_text(payload: object, field: str, required: bool, max_length: int = MA
     return value.strip()
 
 
+def _read_history(payload: object) -> list[dict[str, str]] | None:
+    raw = payload.get("history") if isinstance(payload, dict) else None
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise ValueError("'history' must be a list")
+    turns = []
+    for position, turn in enumerate(raw[-MAX_HISTORY_TURNS:]):
+        if not isinstance(turn, dict):
+            raise ValueError(f"'history[{position}]' must be an object")
+        turns.append({
+            "question": _read_text(turn, "question", required=True),
+            "answer": _read_text(turn, "answer", required=False, max_length=MAX_PREVIOUS_ANSWER_LENGTH),
+        })
+    return turns
+
+
+def _build_messages(payload: object, question: str) -> list:
+    history = _read_history(payload)
+    if history is None:
+        previous_question = _read_text(payload, "previous_question", required=False)
+        previous_answer = _read_text(payload, "previous_answer", required=False, max_length=MAX_PREVIOUS_ANSWER_LENGTH)
+        history = [{"question": previous_question, "answer": previous_answer}] if previous_question or previous_answer else []
+    messages = []
+    for turn in history:
+        if turn["question"]:
+            messages.append(HumanMessage(content=turn["question"]))
+        if turn["answer"]:
+            messages.append(AIMessage(content=turn["answer"]))
+    return [*messages, HumanMessage(content=question)]
+
+
 def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(load_settings()), rate_limiter: RateLimiter | None = None) -> Starlette:
     limiter = rate_limiter or RateLimiter(REQUESTS_PER_MINUTE_PER_CLIENT, REQUESTS_PER_DAY)
     state: dict[str, object] = {}
@@ -103,16 +136,10 @@ def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(
             return JSONResponse({"error": "The body must be valid JSON."}, status_code=400)
         try:
             question = _read_text(payload, "question", required=True)
-            previous_question = _read_text(payload, "previous_question", required=False)
-            previous_answer = _read_text(payload, "previous_answer", required=False, max_length=MAX_PREVIOUS_ANSWER_LENGTH)
+            messages = _build_messages(payload, question)
         except ValueError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
 
-        messages = [
-            *([HumanMessage(content=previous_question)] if previous_question else []),
-            *([AIMessage(content=previous_answer)] if previous_answer else []),
-            HumanMessage(content=question),
-        ]
         try:
             result = await run_in_threadpool(state["agent"].invoke, {"messages": messages})
         except Exception as error:
@@ -120,7 +147,7 @@ def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(
             if _is_quota_error(error):
                 return JSONResponse({"error": "The assistant reached its usage limit for now."}, status_code=503)
             return JSONResponse({"error": "The assistant could not answer right now."}, status_code=502)
-        return JSONResponse({"answer": result["messages"][-1].text})
+        return JSONResponse({"answer": result["messages"][-1].text, "suggestions": list(result.get("suggestions") or [])})
 
     async def health(request: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})

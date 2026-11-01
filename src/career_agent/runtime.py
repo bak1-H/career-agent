@@ -24,6 +24,7 @@ LOCAL_PROFILE_DOCUMENTS = (
     "education.md",
     "academic-progress.md",
     "skills.md",
+    "github.md",
 )
 
 
@@ -56,14 +57,18 @@ def create_agent_runtime(settings: Settings, *, index_documents: bool = False) -
     return index, agent, indexing_report
 
 
+def data_directory() -> Path:
+    return Path(__file__).resolve().parents[2] / "data"
+
+
 def _profile_source() -> tuple[LocalMarkdownSource, tuple[str, ...]]:
-    data_directory = Path(__file__).resolve().parents[2] / "data"
+    directory = data_directory()
     document_paths = LOCAL_PROFILE_DOCUMENTS + tuple(
         path.name
-        for path in sorted(data_directory.glob("project-*.md"))
+        for path in sorted(directory.glob("project-*.md"))
         if path.is_file()
     )
-    return LocalMarkdownSource(data_directory), document_paths
+    return LocalMarkdownSource(directory), document_paths
 
 
 def create_full_context_agent_runtime(settings: Settings):
