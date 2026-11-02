@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 from pydantic import BaseModel, Field
 
-from career_agent.prompt import EVIDENCE_GRADER_PROMPT, QUERY_REWRITER_PROMPT, RAG_SYSTEM_PROMPT, SUGGESTIONS_PROMPT
+from career_agent.prompt import CONDENSE_QUESTION_PROMPT, EVIDENCE_GRADER_PROMPT, QUERY_REWRITER_PROMPT, RAG_SYSTEM_PROMPT, SUGGESTIONS_PROMPT
 from career_agent.retrieval import DocumentationRetriever, _search_terms
 
 
@@ -50,7 +50,12 @@ class SearchQuery(BaseModel):
     query: str = Field(description="Search query to retrieve the fact from the resume documents")
 
 
+class StandaloneQuestion(BaseModel):
+    question: str = Field(description="Current question rewritten so it is understandable without the conversation")
+
+
 class AgentState(MessagesState, total=False):
+    standalone_question: str
     retrieval_query: str
     documents: list[Document]
     evidence_sufficient: bool
@@ -178,20 +183,28 @@ def _fragments(documents: list[Document], query: str, limit_per_fragment: int) -
 def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
     evidence_grader = model.with_structured_output(EvidenceGrade)
     query_rewriter = model.with_structured_output(SearchQuery)
+    question_condenser = model.with_structured_output(StandaloneQuestion)
     replier = model.with_structured_output(AssistantReply, include_raw=True)
     generation_prompt = f"{RAG_SYSTEM_PROMPT}\n{SUGGESTIONS_PROMPT}"
 
-    def route_entry(state: AgentState) -> Literal["small_talk", "retrieve"]:
-        return "small_talk" if small_talk_kind(_last_question(state)) else "retrieve"
+    def route_entry(state: AgentState) -> Literal["small_talk", "condense_question"]:
+        return "small_talk" if small_talk_kind(_last_question(state)) else "condense_question"
 
     def small_talk(state: AgentState):
         reply = SMALL_TALK_REPLIES[small_talk_kind(_last_question(state))]
         return {"messages": [AIMessage(content=reply)], "suggestions": list(DEFAULT_SUGGESTIONS)}
 
-    def retrieve(state: AgentState):
+    def condense_question(state: AgentState, config: RunnableConfig):
         question, previous_question, _ = _conversation(state)
+        if not previous_question:
+            return {"standalone_question": question}
         reference = _reference(state, question, previous_question)
-        query = state.get("retrieval_query") or (f"{question}\n{reference}" if reference else question)
+        request = [SystemMessage(content=CONDENSE_QUESTION_PROMPT), HumanMessage(content=f"Pregunta anterior:\n{reference}\n\nPregunta actual:\n{question}")]
+        condensed = question_condenser.invoke(request, config=config).question.strip()
+        return {"standalone_question": condensed or question}
+
+    def retrieve(state: AgentState):
+        query = state.get("retrieval_query") or state["standalone_question"]
         return {"retrieval_query": query, "documents": retriever.search(query, limit=EVIDENCE_LIMIT)}
 
     def grade_evidence(state: AgentState, config: RunnableConfig):
@@ -251,6 +264,7 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
         return {
             "messages": [message],
             "suggestions": suggestions,
+            "standalone_question": "",
             "retrieval_query": "",
             "documents": [],
             "evidence_sufficient": False,
@@ -259,12 +273,14 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
 
     graph = StateGraph(AgentState)
     graph.add_node("small_talk", small_talk)
+    graph.add_node("condense_question", condense_question)
     graph.add_node("retrieve", retrieve)
     graph.add_node("grade_evidence", grade_evidence)
     graph.add_node("rewrite_query", rewrite_query)
     graph.add_node("generate", generate)
     graph.add_conditional_edges(START, route_entry)
     graph.add_edge("small_talk", END)
+    graph.add_edge("condense_question", "retrieve")
     graph.add_edge("retrieve", "grade_evidence")
     graph.add_conditional_edges("grade_evidence", route_after_grading)
     graph.add_edge("rewrite_query", "retrieve")
