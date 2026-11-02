@@ -209,7 +209,7 @@ class LightweightAgentTests(unittest.TestCase):
         for question in ["sí", "Si", "¡Dale!", "cuéntame más", "Cuentame mas", "más", "ok", "y eso?", "cuéntame más sobre eso por favor"]:
             with self.subTest(question=question):
                 self.assertTrue(is_follow_up(question))
-        for question in ["¿Qué tecnologías usó en Control de Activos?", "Describe su experiencia en la empresa anterior"]:
+        for question in ["¿Qué tecnologías usó en Control de Activos?", "Describe su experiencia en la empresa anterior", "¿Qué estudió?", "¿Dónde vive?", "¿Sabe Python?"]:
             with self.subTest(question=question):
                 self.assertFalse(is_follow_up(question))
 

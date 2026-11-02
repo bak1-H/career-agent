@@ -21,7 +21,7 @@ GRADING_EXCERPT_LIMIT = 1_200
 MAX_QUERY_REWRITES = 1
 PREVIOUS_ANSWER_LIMIT = 400
 PREVIOUS_ANSWERS_KEPT = 3
-FOLLOW_UP_MAX_WORDS = 4
+FOLLOW_UP_WORDS = frozenset({"si", "dale", "ok", "okay", "vale", "claro", "bueno", "porfa", "mas", "y", "eso", "que", "cuentame", "dime", "sigue", "continua"})
 FOLLOW_UP_PREFIXES = ("cuentame mas", "dime mas", "y eso", "sigue")
 PREVIOUS_ANSWER_TAIL_LIMIT = 300
 MAX_SUGGESTIONS = 2
@@ -65,7 +65,7 @@ def _normalize(text: str) -> str:
 
 def is_follow_up(question: str) -> bool:
     normalized = _normalize(question)
-    return len(normalized.split()) <= FOLLOW_UP_MAX_WORDS or normalized.startswith(FOLLOW_UP_PREFIXES)
+    return set(normalized.split()) <= FOLLOW_UP_WORDS or normalized.startswith(FOLLOW_UP_PREFIXES)
 
 
 def small_talk_kind(question: str) -> str | None:
