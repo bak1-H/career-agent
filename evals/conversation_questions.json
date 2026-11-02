@@ -1,0 +1,10 @@
+{
+    "turns": [
+        {"question": "¿Cómo sería trabajar con él?", "allowed": "*"},
+        {"question": "¿Qué hizo en Falabella?", "allowed": "*"},
+        {"question": "¿Y usó NextJS?", "allowed": ["nextjs", "react", "typescript", "nestjs"]},
+        {"question": "¿De qué se trataron las migraciones que realizó?", "allowed": ["ocho", "typescript", "cronjob", "python", "sendgrid", "alertas", "rpa", "google cloud"]}
+    ],
+    "facts": ["ocho", "nestjs", "react", "typescript", "400", "swagger", "postgresql", "bigquery", "sendgrid", "control de activos", "proactiv", "cronjob", "gitlab", "python", "alertas", "rpa", "google cloud", "nextjs"],
+    "technologies": ["nestjs", "react", "typescript", "postgresql", "bigquery", "python", "swagger", "gitlab"]
+}

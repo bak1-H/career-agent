@@ -1,0 +1,44 @@
+[
+    {
+        "previous": "¿Qué es TennisApp?",
+        "previous_answer": "TennisApp es su proyecto de título: una plataforma web para entrenadores y jugadores de tenis.",
+        "question": "¿Dónde estudió?",
+        "sources": ["data/education.md", "data/academic-progress.md"]
+    },
+    {
+        "previous": "¿Qué hizo en Falabella?",
+        "previous_answer": "En Falabella migró procesos a CronJobs y trabajó en el sistema de Control de Activos.",
+        "question": "¿Cuál es su usuario de GitHub?",
+        "sources": ["data/github.md", "data/profile.md"]
+    },
+    {
+        "previous": "¿Qué es Zenly?",
+        "previous_answer": "Zenly es una aplicación web para que profesionales independientes gestionen sus turnos y clientes.",
+        "question": "¿En qué ciudad vive?",
+        "sources": ["data/profile.md"]
+    },
+    {
+        "previous": "¿Qué es Danny Tortas?",
+        "previous_answer": "Danny Tortas es el sitio web de un negocio de pastelería a pedido.",
+        "question": "¿Qué base de datos usa Control de Activos?",
+        "sources": ["data/project-control-activos.md"]
+    },
+    {
+        "previous": "¿Qué es TennisApp?",
+        "previous_answer": "TennisApp es su proyecto de título: una plataforma web para entrenadores y jugadores de tenis.",
+        "question": "¿Y qué parte desarrolló él?",
+        "sources": ["data/project-tennisapp.md"]
+    },
+    {
+        "previous": "¿Qué hizo en Falabella?",
+        "previous_answer": "En Falabella migró procesos a CronJobs y trabajó en el sistema de Control de Activos.",
+        "question": "¿Cuánto tiempo estuvo ahí?",
+        "sources": ["data/experience.md", "data/education.md", "data/project-cronjobs-falabella.md"]
+    },
+    {
+        "previous": "¿Qué es Zenly?",
+        "previous_answer": "Zenly es una aplicación web para que profesionales independientes gestionen sus turnos y clientes.",
+        "question": "¿Qué usó para el backend?",
+        "sources": ["data/project-zenly.md"]
+    }
+]
