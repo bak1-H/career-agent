@@ -22,6 +22,8 @@ from career_agent.config import load_settings
 from career_agent.runtime import create_agent_runtime
 
 
+logging.basicConfig(level=logging.WARNING)
+logging.getLogger("career_agent").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_QUESTION_LENGTH = 500
@@ -140,8 +142,10 @@ def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(
         except ValueError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
 
+        started = monotonic()
         try:
             result = await run_in_threadpool(state["agent"].invoke, {"messages": messages})
+            logger.info("request elapsed_ms=%.0f", (monotonic() - started) * 1000)
         except Exception as error:
             logger.exception("Agent invocation failed")
             if _is_quota_error(error):

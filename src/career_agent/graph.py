@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
+from functools import wraps
+from time import perf_counter
 from typing import Literal
 
 from langchain_core.documents import Document
@@ -14,6 +17,8 @@ from pydantic import BaseModel, Field
 from career_agent.prompt import CONDENSE_QUESTION_PROMPT, EVIDENCE_GRADER_PROMPT, QUERY_REWRITER_PROMPT, RAG_SYSTEM_PROMPT, SUGGESTIONS_PROMPT
 from career_agent.retrieval import DocumentationRetriever, _search_terms
 
+
+logger = logging.getLogger(__name__)
 
 EVIDENCE_LIMIT = 5
 PROMPT_CHAR_BUDGET = 12_000
@@ -61,6 +66,18 @@ class AgentState(MessagesState, total=False):
     evidence_sufficient: bool
     query_rewrites: int
     suggestions: list[str]
+
+
+def _timed(name: str, node):
+    @wraps(node)
+    def timed_node(state, *args, **kwargs):
+        started = perf_counter()
+        try:
+            return node(state, *args, **kwargs)
+        finally:
+            logger.info("node=%s elapsed_ms=%.0f", name, (perf_counter() - started) * 1000)
+
+    return timed_node
 
 
 def _normalize(text: str) -> str:
@@ -272,12 +289,15 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
         }
 
     graph = StateGraph(AgentState)
-    graph.add_node("small_talk", small_talk)
-    graph.add_node("condense_question", condense_question)
-    graph.add_node("retrieve", retrieve)
-    graph.add_node("grade_evidence", grade_evidence)
-    graph.add_node("rewrite_query", rewrite_query)
-    graph.add_node("generate", generate)
+    for name, node in (
+        ("small_talk", small_talk),
+        ("condense_question", condense_question),
+        ("retrieve", retrieve),
+        ("grade_evidence", grade_evidence),
+        ("rewrite_query", rewrite_query),
+        ("generate", generate),
+    ):
+        graph.add_node(name, _timed(name, node))
     graph.add_conditional_edges(START, route_entry)
     graph.add_edge("small_talk", END)
     graph.add_edge("condense_question", "retrieve")
