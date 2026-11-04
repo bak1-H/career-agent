@@ -38,7 +38,7 @@ SMALL_TALK_ANCHORS = frozenset({"hola", "holi", "hey", "buenas", "buenos", "salu
 SMALL_TALK_WORDS = SMALL_TALK_ANCHORS | frozenset({"buen", "dia", "dias", "tardes", "noches", "como", "estas", "esta", "que", "tal", "muchas", "mil", "luego", "pronto", "nos", "vemos"})
 FAREWELL_WORDS = frozenset({"chao", "chau", "adios", "hasta"})
 SMALL_TALK_REPLIES = {
-    "greeting": "¡Hola! 👋 Soy el asistente de Maximiliano. Puedes preguntarme por sus proyectos, su experiencia o sus habilidades.",
+    "greeting": "¡Hola! 👋 Soy KatIA, la asistente de Maximiliano. Puedes preguntarme por sus proyectos, su experiencia o sus habilidades.",
     "thanks": "¡Con gusto! 😊 Si quieres saber algo más sobre Maximiliano, aquí estoy.",
     "farewell": "¡Gracias por pasar! 👋 Si necesitas contactarlo, usa el formulario del portafolio.",
 }
