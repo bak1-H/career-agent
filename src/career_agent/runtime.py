@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from career_agent.adapters.mongo_atlas import MongoAtlasIndex
@@ -28,12 +28,22 @@ LOCAL_PROFILE_DOCUMENTS = (
 )
 
 
-def create_chat_model(settings: Settings) -> BaseChatModel:
+CHAT_TIMEOUT_SECONDS = 12
+
+
+def _gemini_chat_model(settings: Settings, model: str) -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model=settings.gemini_chat_model,
+        model=model,
         google_api_key=settings.google_api_key,
         max_retries=1,
+        timeout=CHAT_TIMEOUT_SECONDS,
+        thinking_level="low",
     )
+
+
+def create_chat_model(settings: Settings) -> Runnable:
+    primary = _gemini_chat_model(settings, settings.gemini_chat_model)
+    return primary.with_fallbacks([_gemini_chat_model(settings, settings.gemini_fallback_chat_model)])
 
 
 def create_embeddings(settings: Settings) -> GoogleGenerativeAIEmbeddings:

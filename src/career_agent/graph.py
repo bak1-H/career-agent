@@ -230,6 +230,7 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
         request = [SystemMessage(content=generation_prompt), HumanMessage(content=f"{history}Evidencia:\n{context}\n\nPregunta:\n{question}")]
         reply = replier.invoke(request, config=config)
         raw, parsed = reply["raw"], reply.get("parsed")
+        logger.info("generate model=%s usage=%s", raw.response_metadata.get("model_name"), raw.usage_metadata)
         if isinstance(parsed, AssistantReply) and parsed.answer.strip():
             message = AIMessage(
                 content=parsed.answer.strip(),

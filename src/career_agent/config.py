@@ -15,6 +15,7 @@ REQUIRED_ENVIRONMENT_VARIABLES = (
     "ATLAS_VECTOR_SEARCH_INDEX_NAME",
 )
 DEFAULT_CHAT_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_FALLBACK_CHAT_MODEL = "gemini-3.5-flash"
 DEFAULT_EMBEDDING_MODEL = "gemini-embedding-2"
 DEFAULT_EMBEDDING_DIMENSIONS = 768
 
@@ -27,6 +28,7 @@ class Settings:
     mongodb_collection: str
     atlas_vector_search_index_name: str
     gemini_chat_model: str = DEFAULT_CHAT_MODEL
+    gemini_fallback_chat_model: str = DEFAULT_FALLBACK_CHAT_MODEL
     gemini_embedding_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS
 
@@ -46,6 +48,7 @@ def load_settings() -> Settings:
         mongodb_collection=os.environ["MONGODB_COLLECTION"],
         atlas_vector_search_index_name=os.environ["ATLAS_VECTOR_SEARCH_INDEX_NAME"],
         gemini_chat_model=os.environ.get("GEMINI_CHAT_MODEL") or DEFAULT_CHAT_MODEL,
+        gemini_fallback_chat_model=os.environ.get("GEMINI_FALLBACK_CHAT_MODEL") or DEFAULT_FALLBACK_CHAT_MODEL,
         gemini_embedding_model=os.environ.get("GEMINI_EMBEDDING_MODEL") or DEFAULT_EMBEDDING_MODEL,
         embedding_dimensions=int(os.environ.get("EMBEDDING_DIMENSIONS") or DEFAULT_EMBEDDING_DIMENSIONS),
     )

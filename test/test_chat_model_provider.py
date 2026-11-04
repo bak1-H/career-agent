@@ -40,8 +40,10 @@ class GeminiConfigurationTests(unittest.TestCase):
         settings = Settings("key", "unused", "unused", "unused", "unused", gemini_chat_model="chat-test", gemini_embedding_model="embedding-test", embedding_dimensions=256)
         chat_model = create_chat_model(settings)
         embeddings = create_embeddings(settings)
-        self.assertIsInstance(chat_model, ChatGoogleGenerativeAI)
-        self.assertEqual((chat_model.model, chat_model.google_api_key.get_secret_value()), ("chat-test", "key"))
+        models = [chat_model.runnable, *chat_model.fallbacks]
+        self.assertTrue(all(isinstance(model, ChatGoogleGenerativeAI) for model in models))
+        self.assertEqual([model.model for model in models], ["chat-test", config.DEFAULT_FALLBACK_CHAT_MODEL])
+        self.assertTrue(all(model.google_api_key.get_secret_value() == "key" and model.timeout for model in models))
         self.assertIsInstance(embeddings, GoogleGenerativeAIEmbeddings)
         self.assertEqual(embeddings.output_dimensionality, 256)
         self.assertIn("embedding-test", embeddings.model)
