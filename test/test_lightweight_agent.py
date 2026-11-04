@@ -217,7 +217,7 @@ class LightweightAgentTests(unittest.TestCase):
         for question in ["sí", "cuéntame más", "¿y qué más?", "¿Dónde lo desplegó?", "¿Qué tecnologías usó en ese proyecto?", "¿Y ahí qué hizo?", "And which technologies does it use?"]:
             with self.subTest(question=question):
                 self.assertTrue(depends_on_conversation(question))
-        for question in ["¿Cuál es su formación académica?", "¿En qué proyectos ha trabajado?", "¿Qué tecnologías usó en Zenly?", "¿Habla japonés?", "¿Sabe Python?"]:
+        for question in ["¿Cuál es su formación académica?", "¿En qué proyectos ha trabajado?", "¿Qué tecnologías usó en Zenly?", "¿Habla japonés?", "¿Sabe Python?", "Cuéntame más sobre la pastelería", "Dime más de Zenly"]:
             with self.subTest(question=question):
                 self.assertFalse(depends_on_conversation(question))
 

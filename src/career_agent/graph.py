@@ -24,7 +24,7 @@ EVIDENCE_LIMIT = 5
 PROMPT_CHAR_BUDGET = 12_000
 PREVIOUS_ANSWER_LIMIT = 400
 PREVIOUS_ANSWERS_KEPT = 3
-FOLLOW_UP_WORDS = frozenset({"si", "dale", "ok", "okay", "vale", "claro", "bueno", "porfa", "mas", "y", "eso", "que", "cuentame", "dime", "sigue", "continua"})
+FOLLOW_UP_WORDS = frozenset({"si", "dale", "ok", "okay", "vale", "claro", "bueno", "porfa", "por", "favor", "mas", "y", "eso", "que", "cuentame", "dime", "sigue", "continua"})
 FOLLOW_UP_PREFIXES = ("cuentame mas", "dime mas", "y eso", "sigue")
 REFERENCE_WORDS = frozenset({
     "eso", "esa", "ese", "esos", "esas", "este", "esta", "estos", "estas", "ahi", "alli", "aqui",
@@ -80,7 +80,8 @@ def _normalize(text: str) -> str:
 
 def is_follow_up(question: str) -> bool:
     normalized = _normalize(question)
-    return set(normalized.split()) <= FOLLOW_UP_WORDS or normalized.startswith(FOLLOW_UP_PREFIXES)
+    words = normalized.split()
+    return set(words) <= FOLLOW_UP_WORDS or normalized.startswith(FOLLOW_UP_PREFIXES) and bool(REFERENCE_WORDS.intersection(words))
 
 
 def depends_on_conversation(question: str) -> bool:
