@@ -4,7 +4,7 @@
 
 - Nombre: Maximiliano Arturo Huerta González
 - Rol profesional: Desarrollador Full Stack
-- Ubicación: Santiago, Chile
+- Ubicación: vive en Santiago, Chile
 - Correo: maximilianohuerta20@gmail.com
 - GitHub: https://github.com/bak1-H
 
