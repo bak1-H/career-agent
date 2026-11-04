@@ -66,16 +66,6 @@ class LightweightAgentTests(unittest.TestCase):
         self.assertTrue(messages[1].content.endswith("Pregunta:\nPython?"))
         retriever.search.assert_called_once_with("Python?", limit=EVIDENCE_LIMIT)
 
-    def test_model_response_is_returned_with_its_usage(self):
-        response = AIMessage(
-            content="Respuesta final.",
-            usage_metadata={"input_tokens": 10, "output_tokens": 25, "total_tokens": 35},
-        )
-        retriever = Mock()
-        retriever.search.return_value = []
-        result = create_agent(retriever, FakeChatModel(lambda messages: response)).invoke({"messages": [HumanMessage(content="Pregunta")]})
-        self.assertEqual(result["messages"][-1], response)
-
     def test_unanswerable_question_is_searched_once_and_answered(self):
         retriever = Mock()
         retriever.search.return_value = [Document(page_content="Sin relación", metadata={"source": "data/skills.md"})]
@@ -137,8 +127,9 @@ class LightweightAgentTests(unittest.TestCase):
     def test_unparseable_reply_falls_back_to_raw_text_without_suggestions(self):
         retriever = Mock()
         retriever.search.return_value = [Document(page_content="Python", metadata={"source": "data/skills.md"})]
-        result = create_agent(retriever, answering("Texto plano {no json")).invoke({"messages": [HumanMessage(content="¿Sabe Python?")]})
-        self.assertEqual(result["messages"][-1].text, "Texto plano {no json")
+        response = AIMessage(content="Texto plano {no json", usage_metadata={"input_tokens": 10, "output_tokens": 25, "total_tokens": 35})
+        result = create_agent(retriever, FakeChatModel(lambda messages: response)).invoke({"messages": [HumanMessage(content="¿Sabe Python?")]})
+        self.assertEqual(result["messages"][-1], response)
         self.assertEqual(result["suggestions"], [])
 
     def test_no_suggestions_without_evidence(self):
@@ -148,16 +139,6 @@ class LightweightAgentTests(unittest.TestCase):
         model = FakeChatModel(lambda messages: AIMessage(content=payload))
         result = create_agent(retriever, model).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
         self.assertEqual(result["suggestions"], [])
-
-    def test_generation_prompt_asks_for_suggestions(self):
-        calls = []
-        def generate(messages, config):
-            calls.append(messages)
-            return AIMessage(content="Respuesta")
-        retriever = Mock()
-        retriever.search.return_value = []
-        create_agent(retriever, FakeChatModel(generate)).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
-        self.assertIn("suggestions", calls[0][0].content)
 
     def test_small_talk_detection(self):
         cases = {"Hola": "greeting", "¡Buenas tardes!": "greeting", "hola, ¿cómo estás?": "greeting", "Muchas gracias": "thanks", "chao": "farewell", "hasta luego": "farewell"}

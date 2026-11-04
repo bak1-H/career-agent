@@ -2,6 +2,9 @@ import os
 import unittest
 from unittest.mock import patch
 
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from career_agent import config
@@ -47,6 +50,16 @@ class GeminiConfigurationTests(unittest.TestCase):
         self.assertIsInstance(embeddings, GoogleGenerativeAIEmbeddings)
         self.assertEqual(embeddings.output_dimensionality, 256)
         self.assertIn("embedding-test", embeddings.model)
+
+    def test_fallback_model_answers_when_the_primary_fails(self):
+        def generate(model, messages, *args, **kwargs):
+            if model.model == "primary":
+                raise TimeoutError("primary is overloaded")
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=f"from {model.model}"))])
+
+        settings = Settings("key", "unused", "unused", "unused", "unused", gemini_chat_model="primary", gemini_fallback_chat_model="fallback")
+        with patch.object(ChatGoogleGenerativeAI, "_generate", autospec=True, side_effect=generate):
+            self.assertEqual(create_chat_model(settings).invoke("Hola").content, "from fallback")
 
 
 if __name__ == "__main__":

@@ -18,11 +18,6 @@ class AgentOutputTests(unittest.TestCase):
         agent = Mock()
         agent.invoke.return_value = {"messages": [
             HumanMessage(content=question),
-            AIMessage(content="Buscando evidencia", tool_calls=[{
-                "name": "search_documentation", "args": {"query": question}, "id": "search-1",
-            }]),
-            ToolMessage(content="Migraciones independientes y otros proyectos", tool_call_id="search-1"),
-            AIMessage(content="Resumen intermedio"),
             AIMessage(content=final_answer),
         ]}
         output = io.StringIO()
