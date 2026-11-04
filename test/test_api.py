@@ -14,38 +14,13 @@ def build_client(agent, rate_limiter=None):
 
 
 class AskEndpointTests(unittest.TestCase):
-    def test_answer_comes_from_the_agent_with_previous_question_first(self):
-        agent = Mock()
-        agent.invoke.return_value = {"messages": [AIMessage(content="Respuesta")]}
-        client, index = build_client(agent)
-        with client:
-            response = client.post("/ask", json={"question": "¿Y el backend?", "previous_question": "¿Qué es Control de Activos?"})
-        self.assertEqual(response.json(), {"answer": "Respuesta", "suggestions": []})
-        messages = agent.invoke.call_args.args[0]["messages"]
-        self.assertEqual([message.content for message in messages], ["¿Qué es Control de Activos?", "¿Y el backend?"])
-        index.close.assert_called_once()
-
-    def test_previous_answer_is_sent_between_the_questions(self):
-        agent = Mock()
-        agent.invoke.return_value = {"messages": [AIMessage(content="Más detalle")]}
-        client, _ = build_client(agent)
-        with client:
-            response = client.post("/ask", json={"question": "si", "previous_question": "¿Cuál fue su último trabajo?", "previous_answer": "Falabella."})
-        self.assertEqual(response.status_code, 200)
-        messages = agent.invoke.call_args.args[0]["messages"]
-        self.assertEqual([(type(message).__name__, message.content) for message in messages], [
-            ("HumanMessage", "¿Cuál fue su último trabajo?"),
-            ("AIMessage", "Falabella."),
-            ("HumanMessage", "si"),
-        ])
-
     def test_history_turns_are_sent_in_order_before_the_question(self):
         agent = Mock()
         agent.invoke.return_value = {"messages": [AIMessage(content="Listo")], "suggestions": ["¿Y el frontend?", "¿Dónde se desplegó?"]}
-        client, _ = build_client(agent)
+        client, index = build_client(agent)
         history = [{"question": f"P{number}", "answer": f"R{number}"} for number in range(1, 4)]
         with client:
-            response = client.post("/ask", json={"question": "si", "history": history, "previous_question": "ignorada"})
+            response = client.post("/ask", json={"question": "si", "history": history})
         self.assertEqual(response.json(), {"answer": "Listo", "suggestions": ["¿Y el frontend?", "¿Dónde se desplegó?"]})
         messages = agent.invoke.call_args.args[0]["messages"]
         self.assertEqual([(type(message).__name__, message.content) for message in messages], [
@@ -54,6 +29,7 @@ class AskEndpointTests(unittest.TestCase):
             ("HumanMessage", "P3"), ("AIMessage", "R3"),
             ("HumanMessage", "si"),
         ])
+        index.close.assert_called_once()
 
     def test_only_the_last_three_history_turns_are_kept(self):
         agent = Mock()

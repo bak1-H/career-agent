@@ -102,15 +102,9 @@ def _read_history(payload: object) -> list[dict[str, str]] | None:
 
 
 def _build_messages(payload: object, question: str) -> list:
-    history = _read_history(payload)
-    if history is None:
-        previous_question = _read_text(payload, "previous_question", required=False)
-        previous_answer = _read_text(payload, "previous_answer", required=False, max_length=MAX_PREVIOUS_ANSWER_LENGTH)
-        history = [{"question": previous_question, "answer": previous_answer}] if previous_question or previous_answer else []
     messages = []
-    for turn in history:
-        if turn["question"]:
-            messages.append(HumanMessage(content=turn["question"]))
+    for turn in _read_history(payload) or []:
+        messages.append(HumanMessage(content=turn["question"]))
         if turn["answer"]:
             messages.append(AIMessage(content=turn["answer"]))
     return [*messages, HumanMessage(content=question)]
