@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 from pydantic import BaseModel, Field
 
-from career_agent.prompt import CONDENSE_QUESTION_PROMPT, EVIDENCE_GRADER_PROMPT, QUERY_REWRITER_PROMPT, RAG_SYSTEM_PROMPT, SUGGESTIONS_PROMPT
+from career_agent.prompt import CONDENSE_QUESTION_PROMPT, RAG_SYSTEM_PROMPT, SUGGESTIONS_PROMPT
 from career_agent.retrieval import DocumentationRetriever, _search_terms
 
 
@@ -22,12 +22,15 @@ logger = logging.getLogger(__name__)
 
 EVIDENCE_LIMIT = 5
 PROMPT_CHAR_BUDGET = 12_000
-GRADING_EXCERPT_LIMIT = 1_200
-MAX_QUERY_REWRITES = 1
 PREVIOUS_ANSWER_LIMIT = 400
 PREVIOUS_ANSWERS_KEPT = 3
 FOLLOW_UP_WORDS = frozenset({"si", "dale", "ok", "okay", "vale", "claro", "bueno", "porfa", "mas", "y", "eso", "que", "cuentame", "dime", "sigue", "continua"})
 FOLLOW_UP_PREFIXES = ("cuentame mas", "dime mas", "y eso", "sigue")
+REFERENCE_WORDS = frozenset({
+    "eso", "esa", "ese", "esos", "esas", "este", "esta", "estos", "estas", "ahi", "alli", "aqui",
+    "aquel", "aquella", "aquello", "ello", "lo", "le", "les", "it", "its", "that", "this", "there", "they", "them",
+})
+CONTINUATION_STARTS = frozenset({"y", "and"})
 PREVIOUS_ANSWER_TAIL_LIMIT = 300
 MAX_SUGGESTIONS = 2
 MAX_SUGGESTION_LENGTH = 60
@@ -47,14 +50,6 @@ class AssistantReply(BaseModel):
     suggestions: list[str] = Field(default_factory=list, description="Entre 0 y 2 preguntas breves que el visitante podría hacer a continuación")
 
 
-class EvidenceGrade(BaseModel):
-    sufficient: bool = Field(description="True only if some fragment contains the requested fact")
-
-
-class SearchQuery(BaseModel):
-    query: str = Field(description="Search query to retrieve the fact from the resume documents")
-
-
 class StandaloneQuestion(BaseModel):
     question: str = Field(description="Current question rewritten so it is understandable without the conversation")
 
@@ -63,8 +58,6 @@ class AgentState(MessagesState, total=False):
     standalone_question: str
     retrieval_query: str
     documents: list[Document]
-    evidence_sufficient: bool
-    query_rewrites: int
     suggestions: list[str]
 
 
@@ -88,6 +81,11 @@ def _normalize(text: str) -> str:
 def is_follow_up(question: str) -> bool:
     normalized = _normalize(question)
     return set(normalized.split()) <= FOLLOW_UP_WORDS or normalized.startswith(FOLLOW_UP_PREFIXES)
+
+
+def depends_on_conversation(question: str) -> bool:
+    words = _normalize(question).split()
+    return is_follow_up(question) or bool(words) and (words[0] in CONTINUATION_STARTS or bool(REFERENCE_WORDS.intersection(words)))
 
 
 def small_talk_kind(question: str) -> str | None:
@@ -189,17 +187,7 @@ def create_full_context_agent(documents: list[Document], model: BaseChatModel):
     return graph.compile()
 
 
-def _fragments(documents: list[Document], query: str, limit_per_fragment: int) -> str:
-    return "\n\n".join(
-        f"Fuente: {document.metadata.get('source', 'sin fuente identificada')}\n"
-        + select_excerpt(document.page_content, query, limit_per_fragment)
-        for document in documents
-    )
-
-
 def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
-    evidence_grader = model.with_structured_output(EvidenceGrade)
-    query_rewriter = model.with_structured_output(SearchQuery)
     question_condenser = model.with_structured_output(StandaloneQuestion)
     replier = model.with_structured_output(AssistantReply, include_raw=True)
     generation_prompt = f"{RAG_SYSTEM_PROMPT}\n{SUGGESTIONS_PROMPT}"
@@ -213,7 +201,7 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
 
     def condense_question(state: AgentState, config: RunnableConfig):
         question, previous_question, _ = _conversation(state)
-        if not previous_question:
+        if not previous_question or not depends_on_conversation(question):
             return {"standalone_question": question}
         reference = _reference(state, question, previous_question)
         request = [SystemMessage(content=CONDENSE_QUESTION_PROMPT), HumanMessage(content=f"Pregunta anterior:\n{reference}\n\nPregunta actual:\n{question}")]
@@ -221,34 +209,8 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
         return {"standalone_question": condensed or question}
 
     def retrieve(state: AgentState):
-        query = state.get("retrieval_query") or state["standalone_question"]
+        query = state["standalone_question"]
         return {"retrieval_query": query, "documents": retriever.search(query, limit=EVIDENCE_LIMIT)}
-
-    def grade_evidence(state: AgentState, config: RunnableConfig):
-        documents = state.get("documents", [])
-        if not documents:
-            return {"evidence_sufficient": False}
-        question, previous_question, _ = _conversation(state)
-        reference = _reference(state, question, previous_question)
-        context = f"Pregunta anterior:\n{reference}\n\n" if reference else ""
-        request = [
-            SystemMessage(content=EVIDENCE_GRADER_PROMPT),
-            HumanMessage(content=f"Fragmentos:\n{_fragments(documents, f'{reference}\n{question}', GRADING_EXCERPT_LIMIT)}\n\n{context}Pregunta actual:\n{question}"),
-        ]
-        return {"evidence_sufficient": evidence_grader.invoke(request, config=config).sufficient}
-
-    def route_after_grading(state: AgentState) -> Literal["generate", "rewrite_query"]:
-        if state.get("evidence_sufficient") or state.get("query_rewrites", 0) >= MAX_QUERY_REWRITES:
-            return "generate"
-        return "rewrite_query"
-
-    def rewrite_query(state: AgentState, config: RunnableConfig):
-        question, previous_question, _ = _conversation(state)
-        reference = _reference(state, question, previous_question)
-        context = f"Pregunta anterior:\n{reference}\n\n" if reference else ""
-        request = [SystemMessage(content=QUERY_REWRITER_PROMPT), HumanMessage(content=f"{context}Pregunta:\n{question}")]
-        rewritten = query_rewriter.invoke(request, config=config).query.strip()
-        return {"retrieval_query": rewritten or question, "query_rewrites": state.get("query_rewrites", 0) + 1}
 
     def generate(state: AgentState, config: RunnableConfig):
         question, previous_question, remaining = _conversation(state)
@@ -284,8 +246,6 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
             "standalone_question": "",
             "retrieval_query": "",
             "documents": [],
-            "evidence_sufficient": False,
-            "query_rewrites": 0,
         }
 
     graph = StateGraph(AgentState)
@@ -293,16 +253,12 @@ def create_agent(retriever: DocumentationRetriever, model: BaseChatModel):
         ("small_talk", small_talk),
         ("condense_question", condense_question),
         ("retrieve", retrieve),
-        ("grade_evidence", grade_evidence),
-        ("rewrite_query", rewrite_query),
         ("generate", generate),
     ):
         graph.add_node(name, _timed(name, node))
     graph.add_conditional_edges(START, route_entry)
     graph.add_edge("small_talk", END)
     graph.add_edge("condense_question", "retrieve")
-    graph.add_edge("retrieve", "grade_evidence")
-    graph.add_conditional_edges("grade_evidence", route_after_grading)
-    graph.add_edge("rewrite_query", "retrieve")
+    graph.add_edge("retrieve", "generate")
     graph.add_edge("generate", END)
     return graph.compile()

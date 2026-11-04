@@ -5,28 +5,20 @@ from unittest.mock import Mock
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
-from career_agent.graph import EVIDENCE_LIMIT, PROMPT_CHAR_BUDGET, DEFAULT_SUGGESTIONS, create_agent, is_follow_up, select_excerpt, small_talk_kind
+from career_agent.graph import EVIDENCE_LIMIT, PROMPT_CHAR_BUDGET, DEFAULT_SUGGESTIONS, create_agent, depends_on_conversation, is_follow_up, select_excerpt, small_talk_kind
 from career_agent.retrieval import DocumentationIndexer, DocumentationRetriever
 
 
 class FakeChatModel:
-    def __init__(self, generate, grades=(True,), rewrites=("consulta reescrita",), condensed="pregunta condensada"):
+    def __init__(self, generate, condensed="pregunta condensada"):
         self._generate = RunnableLambda(generate)
-        self._grades = list(grades)
-        self._rewrites = list(rewrites)
         self._condensed = condensed
-        self.grade_requests = []
-        self.rewrite_requests = []
         self.condense_requests = []
 
     def with_structured_output(self, schema, include_raw=False):
-        if schema.__name__ == "EvidenceGrade":
-            return RunnableLambda(lambda messages: self._grade(schema, messages))
         if schema.__name__ == "StandaloneQuestion":
             return RunnableLambda(lambda messages: self._condense(schema, messages))
-        if schema.__name__ == "AssistantReply":
-            return RunnableLambda(lambda messages, config: self._reply(schema, messages, config))
-        return RunnableLambda(lambda messages: self._rewrite(schema, messages))
+        return RunnableLambda(lambda messages, config: self._reply(schema, messages, config))
 
     def _reply(self, schema, messages, config):
         raw = self._generate.invoke(messages, config=config)
@@ -36,17 +28,9 @@ class FakeChatModel:
             parsed = None
         return {"raw": raw, "parsed": parsed, "parsing_error": None}
 
-    def _grade(self, schema, messages):
-        self.grade_requests.append(messages)
-        return schema(sufficient=self._grades.pop(0))
-
     def _condense(self, schema, messages):
         self.condense_requests.append(messages)
         return schema(question=self._condensed)
-
-    def _rewrite(self, schema, messages):
-        self.rewrite_requests.append(messages)
-        return schema(query=self._rewrites.pop(0))
 
     def invoke(self, messages, config=None):
         return self._generate.invoke(messages, config=config)
@@ -92,35 +76,13 @@ class LightweightAgentTests(unittest.TestCase):
         result = create_agent(retriever, FakeChatModel(lambda messages: response)).invoke({"messages": [HumanMessage(content="Pregunta")]})
         self.assertEqual(result["messages"][-1], response)
 
-    def test_insufficient_evidence_triggers_one_rewrite_and_new_search(self):
-        retriever = Mock()
-        retriever.search.side_effect = [
-            [Document(page_content="Resumen sin el dato", metadata={"source": "data/profile.md"})],
-            [Document(page_content="Ubicación: Santiago, Chile", metadata={"source": "data/profile.md"})],
-        ]
-        model = FakeChatModel(lambda messages: AIMessage(content="Vive en Santiago."), grades=(False, True), rewrites=("ubicación ciudad",))
-        result = create_agent(retriever, model).invoke({"messages": [HumanMessage(content="¿Dónde vive?")]})
-        self.assertEqual([call.args[0] for call in retriever.search.call_args_list], ["¿Dónde vive?", "ubicación ciudad"])
-        self.assertEqual(len(model.rewrite_requests), 1)
-        self.assertEqual(result["messages"][-1].content, "Vive en Santiago.")
-        self.assertEqual((result["retrieval_query"], result["documents"], result["query_rewrites"]), ("", [], 0))
-
-    def test_rewrites_stop_after_the_limit_and_still_answer(self):
+    def test_unanswerable_question_is_searched_once_and_answered(self):
         retriever = Mock()
         retriever.search.return_value = [Document(page_content="Sin relación", metadata={"source": "data/skills.md"})]
-        model = FakeChatModel(lambda messages: AIMessage(content="No hay evidencia."), grades=(False, False), rewrites=("go golang",))
-        result = create_agent(retriever, model).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
-        self.assertEqual(retriever.search.call_count, 2)
-        self.assertEqual((len(model.grade_requests), len(model.rewrite_requests)), (2, 1))
-        self.assertEqual(result["messages"][-1].content, "No hay evidencia.")
-
-    def test_empty_retrieval_is_graded_without_calling_the_model(self):
-        retriever = Mock()
-        retriever.search.return_value = []
-        model = FakeChatModel(lambda messages: AIMessage(content="Sin evidencia."), grades=(), rewrites=("otra consulta",))
-        create_agent(retriever, model).invoke({"messages": [HumanMessage(content="Pregunta")]})
-        self.assertEqual(model.grade_requests, [])
-        self.assertEqual(len(model.rewrite_requests), 1)
+        result = create_agent(retriever, answering("No tengo ese dato.")).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
+        retriever.search.assert_called_once_with("¿Sabe Go?", limit=EVIDENCE_LIMIT)
+        self.assertEqual(result["messages"][-1].content, "No tengo ese dato.")
+        self.assertEqual((result["retrieval_query"], result["documents"]), ("", []))
 
     def test_relevant_late_paragraph_is_retained(self):
         text = "Unrelated " * 1000 + "\n\nPython evidence near the end."
@@ -183,7 +145,7 @@ class LightweightAgentTests(unittest.TestCase):
         payload = json.dumps({"answer": "No tengo ese dato.", "suggestions": ["¿Qué más sabe?"]})
         retriever = Mock()
         retriever.search.return_value = []
-        model = FakeChatModel(lambda messages: AIMessage(content=payload), grades=(), rewrites=("otra",))
+        model = FakeChatModel(lambda messages: AIMessage(content=payload))
         result = create_agent(retriever, model).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
         self.assertEqual(result["suggestions"], [])
 
@@ -194,7 +156,7 @@ class LightweightAgentTests(unittest.TestCase):
             return AIMessage(content="Respuesta")
         retriever = Mock()
         retriever.search.return_value = []
-        create_agent(retriever, FakeChatModel(generate, rewrites=("otra",), grades=())).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
+        create_agent(retriever, FakeChatModel(generate)).invoke({"messages": [HumanMessage(content="¿Sabe Go?")]})
         self.assertIn("suggestions", calls[0][0].content)
 
     def test_small_talk_detection(self):
@@ -239,34 +201,30 @@ class LightweightAgentTests(unittest.TestCase):
         self.assertNotIn("Trabajó en varios proyectos", condense_request)
         self.assertEqual(retriever.search.call_args.args[0], "¿Qué es Zenly?")
 
-    def test_follow_up_grader_and_rewriter_receive_the_previous_answer_tail(self):
-        retriever = Mock()
-        retriever.search.return_value = [Document(page_content="Sin dato", metadata={"source": "data/projects.md"})]
-        model = FakeChatModel(lambda messages: AIMessage(content="Listo"), grades=(False, True), rewrites=("zenly proyecto",))
-        create_agent(retriever, model).invoke({"messages": [
-            HumanMessage(content="¿En qué proyectos trabajó?"),
-            AIMessage(content="¿Te cuento sobre Zenly?"),
-            HumanMessage(content="sí"),
-        ]})
-        self.assertIn("Zenly", model.grade_requests[0][1].content)
-        self.assertIn("Zenly", model.rewrite_requests[0][1].content)
-
-    def test_standalone_question_condensation_ignores_the_previous_answer(self):
+    def test_standalone_question_is_not_condensed_even_with_history(self):
         retriever = Mock()
         retriever.search.return_value = []
-        model = FakeChatModel(lambda messages: AIMessage(content="Listo"), grades=(), rewrites=("otra",), condensed="¿Cuál es su formación académica?")
+        model = FakeChatModel(lambda messages: AIMessage(content="Listo"))
         create_agent(retriever, model).invoke({"messages": [
             HumanMessage(content="¿En qué proyectos trabajó?"),
             AIMessage(content="¿Te cuento sobre Zenly?"),
             HumanMessage(content="¿Cuál es su formación académica?"),
         ]})
-        self.assertNotIn("Zenly", model.condense_requests[0][1].content)
-        self.assertEqual(retriever.search.call_args_list[0].args[0], "¿Cuál es su formación académica?")
+        self.assertEqual(model.condense_requests, [])
+        retriever.search.assert_called_once_with("¿Cuál es su formación académica?", limit=EVIDENCE_LIMIT)
+
+    def test_conversation_dependency_detection(self):
+        for question in ["sí", "cuéntame más", "¿y qué más?", "¿Dónde lo desplegó?", "¿Qué tecnologías usó en ese proyecto?", "¿Y ahí qué hizo?", "And which technologies does it use?"]:
+            with self.subTest(question=question):
+                self.assertTrue(depends_on_conversation(question))
+        for question in ["¿Cuál es su formación académica?", "¿En qué proyectos ha trabajado?", "¿Qué tecnologías usó en Zenly?", "¿Habla japonés?", "¿Sabe Python?"]:
+            with self.subTest(question=question):
+                self.assertFalse(depends_on_conversation(question))
 
     def test_first_question_is_not_condensed(self):
         retriever = Mock()
         retriever.search.return_value = []
-        model = FakeChatModel(lambda messages: AIMessage(content="Listo"), grades=(), rewrites=("otra",))
+        model = FakeChatModel(lambda messages: AIMessage(content="Listo"))
         create_agent(retriever, model).invoke({"messages": [HumanMessage(content="¿Dónde estudió?")]})
         self.assertEqual(model.condense_requests, [])
         self.assertEqual(retriever.search.call_args_list[0].args[0], "¿Dónde estudió?")
