@@ -14,7 +14,7 @@
 
 ## Repositorio career-agent
 
-- Descripción: Asistente Corrective RAG sobre mi perfil profesional: LangGraph, Gemini y MongoDB Atlas Vector Search, desplegado en Railway.
+- Descripción: KatIA, asistente RAG sobre mi perfil profesional: LangGraph, Gemini y MongoDB Atlas Vector Search, desplegado en Railway.
 - Lenguajes: Python (99%).
 - Última actividad: 2026-10-31.
 - Enlace: https://github.com/bak1-H/career-agent

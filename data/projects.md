@@ -33,6 +33,13 @@
 - Tecnología: Astro y Tailwind CSS.
 - Despliegue: Netlify (https://dannytortas.cl).
 
+## KatIA (career-agent)
+
+- Contexto: proyecto personal; es la asistente de este portafolio.
+- Descripción: Asistente RAG que responde preguntas sobre el perfil profesional de Maximiliano usando solo sus archivos Markdown, con búsqueda híbrida (vectorial y léxica) fusionada con Reciprocal Rank Fusion.
+- Tecnología: Python, LangGraph, Gemini, MongoDB Atlas Vector Search, Starlette y Docker.
+- Despliegue: Railway, con pruebas en GitHub Actions (https://github.com/bak1-H/career-agent).
+
 ## Migración de cronjobs de Falabella
 
 - Contexto: práctica profesional en Falabella (equipo de Automatización e Infraestructura).
