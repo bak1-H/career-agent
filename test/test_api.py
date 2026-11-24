@@ -9,8 +9,16 @@ from career_agent.api import MAX_PREVIOUS_ANSWER_LENGTH, MAX_QUESTION_LENGTH, Ra
 
 def build_client(agent, rate_limiter=None):
     index = Mock()
-    client = TestClient(create_app(lambda: (index, agent, None), rate_limiter or RateLimiter(100, 1000)))
+    client = TestClient(create_app(lambda: (index, agent, None), rate_limiter or RateLimiter(100, 1000), overload_retry_delay=0))
     return client, index
+
+
+def overloaded_error():
+    class ModelOverloaded(Exception):
+        code = 503
+    error = RuntimeError("wrapped")
+    error.__cause__ = ModelOverloaded("UNAVAILABLE")
+    return error
 
 
 class AskEndpointTests(unittest.TestCase):
@@ -91,6 +99,25 @@ class AskEndpointTests(unittest.TestCase):
             response = client.post("/ask", json={"question": "Hola"})
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("RESOURCE_EXHAUSTED", response.text)
+
+    def test_overloaded_models_are_retried_once_before_answering(self):
+        agent = Mock()
+        agent.invoke.side_effect = [overloaded_error(), {"messages": [AIMessage(content="Respuesta")]}]
+        client, _ = build_client(agent)
+        with client:
+            response = client.post("/ask", json={"question": "Hola"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(agent.invoke.call_count, 2)
+
+    def test_persistent_overload_returns_502_without_details(self):
+        agent = Mock()
+        agent.invoke.side_effect = [overloaded_error(), overloaded_error()]
+        client, _ = build_client(agent)
+        with client:
+            response = client.post("/ask", json={"question": "Hola"})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(agent.invoke.call_count, 2)
+        self.assertNotIn("UNAVAILABLE", response.text)
 
     def test_rate_limited_clients_receive_429(self):
         agent = Mock()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections import defaultdict, deque
@@ -31,6 +32,7 @@ MAX_PREVIOUS_ANSWER_LENGTH = 4_000
 MAX_HISTORY_TURNS = 3
 REQUESTS_PER_MINUTE_PER_CLIENT = 10
 REQUESTS_PER_DAY = 300
+OVERLOAD_RETRY_DELAY_SECONDS = 1.5
 
 
 class RateLimiter:
@@ -67,12 +69,14 @@ def _client_address(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _is_quota_error(error: BaseException | None) -> bool:
+def _model_error_code(error: BaseException | None) -> int | None:
     while error is not None:
-        if isinstance(error, GoogleRateLimitError) or getattr(error, "code", None) == 429:
-            return True
+        if isinstance(error, GoogleRateLimitError):
+            return 429
+        if getattr(error, "code", None) in (429, 503):
+            return error.code
         error = error.__cause__
-    return False
+    return None
 
 
 def _read_text(payload: object, field: str, required: bool, max_length: int = MAX_QUESTION_LENGTH) -> str:
@@ -110,7 +114,7 @@ def _build_messages(payload: object, question: str) -> list:
     return [*messages, HumanMessage(content=question)]
 
 
-def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(load_settings()), rate_limiter: RateLimiter | None = None) -> Starlette:
+def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(load_settings()), rate_limiter: RateLimiter | None = None, overload_retry_delay: float = OVERLOAD_RETRY_DELAY_SECONDS) -> Starlette:
     limiter = rate_limiter or RateLimiter(REQUESTS_PER_MINUTE_PER_CLIENT, REQUESTS_PER_DAY)
     state: dict[str, object] = {}
 
@@ -137,14 +141,21 @@ def create_app(load_runtime: Callable[[], tuple] = lambda: create_agent_runtime(
             return JSONResponse({"error": str(error)}, status_code=400)
 
         started = monotonic()
-        try:
-            result = await run_in_threadpool(state["agent"].invoke, {"messages": messages})
-            logger.info("request elapsed_ms=%.0f", (monotonic() - started) * 1000)
-        except Exception as error:
-            logger.exception("Agent invocation failed")
-            if _is_quota_error(error):
-                return JSONResponse({"error": "The assistant reached its usage limit for now."}, status_code=503)
-            return JSONResponse({"error": "The assistant could not answer right now."}, status_code=502)
+        for attempt in range(2):
+            try:
+                result = await run_in_threadpool(state["agent"].invoke, {"messages": messages})
+                logger.info("request elapsed_ms=%.0f attempts=%d", (monotonic() - started) * 1000, attempt + 1)
+                break
+            except Exception as error:
+                error_code = _model_error_code(error)
+                if error_code == 503 and attempt == 0:
+                    logger.warning("Chat models overloaded, retrying in %.1fs", overload_retry_delay)
+                    await asyncio.sleep(overload_retry_delay)
+                    continue
+                logger.exception("Agent invocation failed")
+                if error_code == 429:
+                    return JSONResponse({"error": "The assistant reached its usage limit for now."}, status_code=503)
+                return JSONResponse({"error": "The assistant could not answer right now."}, status_code=502)
         return JSONResponse({"answer": result["messages"][-1].text, "suggestions": list(result.get("suggestions") or [])})
 
     async def health(request: Request) -> JSONResponse:
